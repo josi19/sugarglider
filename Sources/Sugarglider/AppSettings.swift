@@ -1,0 +1,338 @@
+import SwiftUI
+
+/// Persisted settings, backed by `UserDefaults` and observed reactively via the
+/// Observation framework. Every property is a plain stored var whose `didSet`
+/// writes through to `defaults` — SwiftUI views bound to an `AppSettings`
+/// instance (via `@Bindable`/`@Environment`) update automatically on change.
+/// `init(defaults:)` is injectable so tests can use an isolated `UserDefaults`
+/// suite instead of resetting the shared `.standard` domain.
+@MainActor
+@Observable
+final class AppSettings {
+    private let defaults: UserDefaults
+
+    /// Fired when `baseURL`/`token` change, so `ReadingStore` (constructed
+    /// separately, and not always alive as a view) can invalidate its cache
+    /// and re-fetch. Not called during `init`'s initial load.
+    var onConnectionChanged: (() -> Void)?
+
+    /// Base URL of the Nightscout instance, e.g. "https://my-cgm.up.railway.app".
+    var baseURL: String = "" {
+        didSet {
+            defaults.set(baseURL, forKey: "baseURL")
+            if oldValue != baseURL { onConnectionChanged?() }
+        }
+    }
+
+    /// Nightscout API access token (e.g. "monitor-1a2b3c4d"). Empty if the
+    /// instance allows unauthenticated reads.
+    var token: String = "" {
+        didSet {
+            defaults.set(token, forKey: "token")
+            if oldValue != token { onConnectionChanged?() }
+        }
+    }
+
+    /// Display units. Nightscout stores mg/dL internally; mmol/L divides by 18.
+    enum Units: String {
+        case mmol, mgdl
+
+        var label: String { self == .mmol ? "mmol/L" : "mg/dL" }
+
+        /// Convert an mg/dL quantity to the display unit.
+        func display(_ mgdl: Double) -> Double { self == .mmol ? mgdl / 18.0 : mgdl }
+        func value(fromMgdl sgv: Int) -> Double { display(Double(sgv)) }
+        func text(fromMgdl sgv: Int) -> String {
+            self == .mmol ? String(format: "%.1f", Double(sgv) / 18.0) : String(sgv)
+        }
+
+        /// Convert a display-unit value back to mg/dL (for storage).
+        func toMgdl(_ value: Double) -> Double { self == .mmol ? value * 18.0 : value }
+    }
+
+    var units: Units = .mmol { didSet { defaults.set(units.rawValue, forKey: "units") } }
+
+    /// Optimal/target glucose range, stored in mg/dL (Nightscout's native unit).
+    /// Defaults to the common 70–180 mg/dL (≈ 3.9–10.0 mmol/L) range.
+    var targetLow: Double = 70 { didSet { defaults.set(targetLow, forKey: "targetLow") } }
+    var targetHigh: Double = 180 { didSet { defaults.set(targetHigh, forKey: "targetHigh") } }
+
+    /// Extreme thresholds (mg/dL). Readings beyond these use the extreme colors.
+    var extremeLow: Double = 54 { didSet { defaults.set(extremeLow, forKey: "extremeLow") } }
+    var extremeHigh: Double = 250 { didSet { defaults.set(extremeHigh, forKey: "extremeHigh") } }
+
+    /// Chart colors, each independently configurable and archived as `NSColor`
+    /// (alpha included, so the band can be translucent). Defaults are
+    /// monochromatic — the adaptive label color — so the chart is subtle until
+    /// the user assigns zone colors.
+    static let defaultBandColor = Color(nsColor: .labelColor).opacity(0.08)
+    static let defaultInRangeColor = Color(nsColor: .labelColor)
+    static let defaultBelowColor = Color(nsColor: .labelColor)
+    static let defaultAboveColor = Color(nsColor: .labelColor)
+    static let defaultExtremeLowColor = Color(nsColor: .labelColor)
+    static let defaultExtremeHighColor = Color(nsColor: .labelColor)
+    static let defaultSliderColor = Color(nsColor: .labelColor)
+    // Opaque starting swatch so the color picker's opacity slider opens at 100%
+    // rather than trapping a freshly-picked color at zero alpha. Whether it's
+    // actually painted is governed by `chartBackgroundEnabled`.
+    static let defaultChartBackgroundColor = Color(nsColor: .controlBackgroundColor)
+
+    var bandColor: Color = defaultBandColor { didSet { persistColor(bandColor, "bandColor") } }
+    var inRangeColor: Color = defaultInRangeColor { didSet { persistColor(inRangeColor, "inRangeColor") } }
+    var belowColor: Color = defaultBelowColor { didSet { persistColor(belowColor, "belowColor") } }
+    var aboveColor: Color = defaultAboveColor { didSet { persistColor(aboveColor, "aboveColor") } }
+    var extremeLowColor: Color = defaultExtremeLowColor { didSet { persistColor(extremeLowColor, "extremeLowColor") } }
+    var extremeHighColor: Color = defaultExtremeHighColor { didSet { persistColor(extremeHighColor, "extremeHighColor") } }
+    var sliderColor: Color = defaultSliderColor { didSet { persistColor(sliderColor, "sliderColor") } }
+    var chartBackgroundColor: Color = defaultChartBackgroundColor { didSet { persistColor(chartBackgroundColor, "chartBackgroundColor") } }
+
+    /// Whether the chart is painted with `chartBackgroundColor`. Off by default,
+    /// so the menu's glass material shows through.
+    var chartBackgroundEnabled: Bool = false { didSet { defaults.set(chartBackgroundEnabled, forKey: "chartBackgroundEnabled") } }
+
+    /// When true, the line's zone colors blend smoothly across thresholds via a
+    /// vertical gradient instead of switching abruptly at each boundary.
+    var blendLineColors: Bool = false { didSet { defaults.set(blendLineColors, forKey: "blendLineColors") } }
+
+    /// Restore all colors to their monochromatic defaults and clear the background.
+    func resetColors() {
+        bandColor = Self.defaultBandColor
+        inRangeColor = Self.defaultInRangeColor
+        belowColor = Self.defaultBelowColor
+        aboveColor = Self.defaultAboveColor
+        extremeLowColor = Self.defaultExtremeLowColor
+        extremeHighColor = Self.defaultExtremeHighColor
+        sliderColor = Self.defaultSliderColor
+        chartBackgroundColor = Self.defaultChartBackgroundColor
+        chartBackgroundEnabled = false
+    }
+
+    // MARK: - Color presets
+
+    /// The archive keys of every configurable color. A preset is just a snapshot
+    /// keyed by these, so it round-trips through the same color storage.
+    static let colorKeys = ["bandColor", "inRangeColor", "belowColor", "aboveColor",
+                            "extremeLowColor", "extremeHighColor", "sliderColor", "chartBackgroundColor"]
+
+    /// A named snapshot of every chart color plus the background-enable flag, so a
+    /// user can keep several palettes and switch between them.
+    struct ColorPreset {
+        var name: String
+        var colors: [String: Color]   // keyed by `colorKeys`
+        var backgroundEnabled: Bool
+    }
+
+    /// Saved color presets, in the user's list order.
+    var colorPresets: [ColorPreset] = [] { didSet { persistPresets(colorPresets) } }
+
+    /// Add `preset`, replacing any existing one with the same name.
+    func saveColorPreset(_ preset: ColorPreset) {
+        if let i = colorPresets.firstIndex(where: { $0.name == preset.name }) {
+            colorPresets[i] = preset
+        } else {
+            colorPresets.append(preset)
+        }
+    }
+
+    func deleteColorPreset(named name: String) {
+        colorPresets.removeAll { $0.name == name }
+    }
+
+    /// Selected chart window in hours (2–48, in 2h steps). Defaults to 6.
+    var rangeHours: Int = 6 {
+        didSet {
+            let clamped = min(48, max(2, rangeHours))
+            if clamped != rangeHours { rangeHours = clamped; return }   // re-enter with the clamped value
+            defaults.set(rangeHours, forKey: "rangeHours")
+        }
+    }
+
+    /// Appearance override. `.system` follows the OS setting.
+    enum Theme: String {
+        case system, light, dark
+
+        /// The AppKit appearance for this override, or nil to follow the
+        /// system. Applied per-window via `View.windowTheme(_:)` — see
+        /// WindowAppearance.swift for why it must be `NSWindow.appearance`.
+        var nsAppearance: NSAppearance? {
+            switch self {
+            case .system: return nil
+            case .light: return NSAppearance(named: .aqua)
+            case .dark: return NSAppearance(named: .darkAqua)
+            }
+        }
+    }
+    var theme: Theme = .system { didSet { defaults.set(theme.rawValue, forKey: "theme") } }
+
+    /// Where to show the change since the previous reading.
+    enum DeltaDisplay: Int { case off = 0, menu = 1, menuAndStatusBar = 2 }
+    var deltaDisplay: DeltaDisplay = .menu { didSet { defaults.set(deltaDisplay.rawValue, forKey: "deltaDisplay") } }
+
+    var isConfigured: Bool { !baseURL.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// A recognizable-but-unreadable form of an access token for display:
+    /// first and last two characters with the middle elided, e.g.
+    /// "reader-0123456789abcdef" → "re***ef". Tokens too short to elide
+    /// meaningfully are masked entirely.
+    static func maskedToken(_ token: String) -> String {
+        guard token.count > 6 else { return String(repeating: "*", count: token.count) }
+        return "\(token.prefix(2))***\(token.suffix(2))"
+    }
+
+    /// Compare two colors by their resolved sRGB channels — `Color ==` can
+    /// report unequal for colors that render identically but were produced
+    /// via different color spaces (e.g. one loaded from an archive).
+    static func colorsMatch(_ a: Color, _ b: Color, eps: CGFloat = 0.01) -> Bool {
+        guard let x = NSColor(a).usingColorSpace(.sRGB), let y = NSColor(b).usingColorSpace(.sRGB) else { return false }
+        return abs(x.redComponent - y.redComponent) < eps
+            && abs(x.greenComponent - y.greenComponent) < eps
+            && abs(x.blueComponent - y.blueComponent) < eps
+            && abs(x.alphaComponent - y.alphaComponent) < eps
+    }
+
+    /// The saved preset whose colors and background flag exactly match the
+    /// current settings, if any — i.e. the palette currently in use.
+    func matchingPreset() -> ColorPreset? {
+        let current = Self.colorKeys.reduce(into: [String: Color]()) { dict, key in
+            dict[key] = colorValue(for: key)
+        }
+        return colorPresets.first { preset in
+            preset.backgroundEnabled == chartBackgroundEnabled
+                && Self.colorKeys.allSatisfy { key in
+                    guard let a = preset.colors[key], let b = current[key] else { return false }
+                    return Self.colorsMatch(a, b)
+                }
+        }
+    }
+
+    /// Apply every color (and the background-enable flag) from `preset`.
+    func apply(_ preset: ColorPreset) {
+        if let c = preset.colors["bandColor"] { bandColor = c }
+        if let c = preset.colors["inRangeColor"] { inRangeColor = c }
+        if let c = preset.colors["belowColor"] { belowColor = c }
+        if let c = preset.colors["aboveColor"] { aboveColor = c }
+        if let c = preset.colors["extremeLowColor"] { extremeLowColor = c }
+        if let c = preset.colors["extremeHighColor"] { extremeHighColor = c }
+        if let c = preset.colors["sliderColor"] { sliderColor = c }
+        if let c = preset.colors["chartBackgroundColor"] { chartBackgroundColor = c }
+        chartBackgroundEnabled = preset.backgroundEnabled
+    }
+
+    /// Snapshot every current color into a named preset.
+    func currentPreset(name: String) -> ColorPreset {
+        let colors = Self.colorKeys.reduce(into: [String: Color]()) { dict, key in
+            dict[key] = colorValue(for: key)
+        }
+        return ColorPreset(name: name, colors: colors, backgroundEnabled: chartBackgroundEnabled)
+    }
+
+    /// First unused "Palette N" name, so repeated saves don't collide by default.
+    func defaultPresetName() -> String {
+        let names = Set(colorPresets.map(\.name))
+        var n = 1
+        while names.contains("Palette \(n)") { n += 1 }
+        return "Palette \(n)"
+    }
+
+    private func colorValue(for key: String) -> Color? {
+        switch key {
+        case "bandColor": return bandColor
+        case "inRangeColor": return inRangeColor
+        case "belowColor": return belowColor
+        case "aboveColor": return aboveColor
+        case "extremeLowColor": return extremeLowColor
+        case "extremeHighColor": return extremeHighColor
+        case "sliderColor": return sliderColor
+        case "chartBackgroundColor": return chartBackgroundColor
+        default: return nil
+        }
+    }
+
+    // MARK: - Init / persistence plumbing
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        migrateThresholdsToMgdl(in: defaults)
+
+        if let v = defaults.string(forKey: "baseURL") { baseURL = v }
+        if let v = defaults.string(forKey: "token") { token = v }
+        if let v = defaults.string(forKey: "units").flatMap(Units.init) { units = v }
+        if let v = defaults.object(forKey: "targetLow") as? Double { targetLow = v }
+        if let v = defaults.object(forKey: "targetHigh") as? Double { targetHigh = v }
+        if let v = defaults.object(forKey: "extremeLow") as? Double { extremeLow = v }
+        if let v = defaults.object(forKey: "extremeHigh") as? Double { extremeHigh = v }
+        bandColor = Self.loadColor("bandColor", default: Self.defaultBandColor, from: defaults)
+        inRangeColor = Self.loadColor("inRangeColor", default: Self.defaultInRangeColor, from: defaults)
+        belowColor = Self.loadColor("belowColor", default: Self.defaultBelowColor, from: defaults)
+        aboveColor = Self.loadColor("aboveColor", default: Self.defaultAboveColor, from: defaults)
+        extremeLowColor = Self.loadColor("extremeLowColor", default: Self.defaultExtremeLowColor, from: defaults)
+        extremeHighColor = Self.loadColor("extremeHighColor", default: Self.defaultExtremeHighColor, from: defaults)
+        sliderColor = Self.loadColor("sliderColor", default: Self.defaultSliderColor, from: defaults)
+        chartBackgroundColor = Self.loadColor("chartBackgroundColor", default: Self.defaultChartBackgroundColor, from: defaults)
+        chartBackgroundEnabled = defaults.bool(forKey: "chartBackgroundEnabled")
+        blendLineColors = defaults.bool(forKey: "blendLineColors")
+        colorPresets = Self.loadPresets(from: defaults)
+        if let v = defaults.object(forKey: "rangeHours") as? Int { rangeHours = v }
+        if let v = defaults.string(forKey: "theme").flatMap(Theme.init) { theme = v }
+        if let v = defaults.object(forKey: "deltaDisplay") as? Int, let d = DeltaDisplay(rawValue: v) { deltaDisplay = d }
+    }
+
+    /// One-time migration: earlier versions stored thresholds in mmol/L. Any
+    /// stored value below 40 is clearly mmol, so scale it to mg/dL. Runs
+    /// against the raw store before values are read into this instance.
+    private func migrateThresholdsToMgdl(in defaults: UserDefaults) {
+        guard !defaults.bool(forKey: "thresholdsMgdl") else { return }
+        for key in ["targetLow", "targetHigh", "extremeLow", "extremeHigh"] {
+            if let v = defaults.object(forKey: key) as? Double, v > 0, v < 40 {
+                defaults.set((v * 18).rounded(), forKey: key)
+            }
+        }
+        defaults.set(true, forKey: "thresholdsMgdl")
+    }
+
+    private func persistColor(_ color: Color, _ key: String) {
+        Self.persistColor(color, key, to: defaults)
+    }
+
+    private static func persistColor(_ color: Color, _ key: String, to defaults: UserDefaults) {
+        let ns = NSColor(color)
+        defaults.set(try? NSKeyedArchiver.archivedData(withRootObject: ns, requiringSecureCoding: true), forKey: key)
+    }
+
+    private static func loadColor(_ key: String, default fallback: Color, from defaults: UserDefaults) -> Color {
+        guard let data = defaults.data(forKey: key),
+              let ns = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
+        else { return fallback }
+        return Color(nsColor: ns)
+    }
+
+    private func persistPresets(_ presets: [ColorPreset]) {
+        let raw: [[String: Any]] = presets.map { preset in
+            var archived: [String: Data] = [:]
+            for (key, color) in preset.colors {
+                let ns = NSColor(color)
+                if let d = try? NSKeyedArchiver.archivedData(withRootObject: ns, requiringSecureCoding: true) {
+                    archived[key] = d
+                }
+            }
+            return ["name": preset.name, "colors": archived, "backgroundEnabled": preset.backgroundEnabled]
+        }
+        defaults.set(raw, forKey: "colorPresets")
+    }
+
+    private static func loadPresets(from defaults: UserDefaults) -> [ColorPreset] {
+        guard let raw = defaults.array(forKey: "colorPresets") as? [[String: Any]] else { return [] }
+        return raw.compactMap { dict in
+            guard let name = dict["name"] as? String else { return nil }
+            let archived = dict["colors"] as? [String: Data] ?? [:]
+            var colors: [String: Color] = [:]
+            for (key, data) in archived {
+                if let ns = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
+                    colors[key] = Color(nsColor: ns)
+                }
+            }
+            return ColorPreset(name: name, colors: colors,
+                               backgroundEnabled: dict["backgroundEnabled"] as? Bool ?? false)
+        }
+    }
+}

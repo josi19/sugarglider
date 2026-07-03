@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+Sugarglider.app/
+*.xcodeproj
+.DS_Store
+.vscode/
+.scratch/

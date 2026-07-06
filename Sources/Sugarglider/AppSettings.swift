@@ -16,6 +16,11 @@ final class AppSettings {
     /// and re-fetch. Not called during `init`'s initial load.
     var onConnectionChanged: (() -> Void)?
 
+    /// Fired when `pollIntervalSeconds` changes, so `ReadingStore` can rebuild
+    /// its timer with the new interval immediately. Not called during `init`'s
+    /// initial load.
+    var onPollIntervalChanged: (() -> Void)?
+
     /// Base URL of the Nightscout instance, e.g. "https://my-cgm.up.railway.app".
     var baseURL: String = "" {
         didSet {
@@ -180,6 +185,18 @@ final class AppSettings {
     enum DeltaDisplay: Int { case off = 0, menu = 1, menuAndStatusBar = 2 }
     var deltaDisplay: DeltaDisplay = .menu { didSet { defaults.set(deltaDisplay.rawValue, forKey: "deltaDisplay") } }
 
+    /// How often `ReadingStore` polls Nightscout for the latest reading, in
+    /// seconds. Clamped to 3–300s (readings arrive every ~5 min, so anything
+    /// far outside that is either wasteful or pointless).
+    var pollIntervalSeconds: Int = 60 {
+        didSet {
+            let clamped = min(300, max(3, pollIntervalSeconds))
+            if clamped != pollIntervalSeconds { pollIntervalSeconds = clamped; return }   // re-enter with the clamped value
+            defaults.set(pollIntervalSeconds, forKey: "pollIntervalSeconds")
+            if oldValue != pollIntervalSeconds { onPollIntervalChanged?() }
+        }
+    }
+
     var isConfigured: Bool { !baseURL.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// A recognizable-but-unreadable form of an access token for display:
@@ -287,6 +304,7 @@ final class AppSettings {
         if let v = defaults.object(forKey: "rangeHours") as? Int { rangeHours = v }
         if let v = defaults.string(forKey: "theme").flatMap(Theme.init) { theme = v }
         if let v = defaults.object(forKey: "deltaDisplay") as? Int, let d = DeltaDisplay(rawValue: v) { deltaDisplay = d }
+        if let v = defaults.object(forKey: "pollIntervalSeconds") as? Int { pollIntervalSeconds = v }
     }
 
     /// One-time migration: earlier versions stored thresholds in mmol/L. Any

@@ -27,7 +27,7 @@ final class ReadingStore {
 
     /// Readings arrive every ~5 min; flag as stale after two missed cycles.
     static let staleThreshold: TimeInterval = 11 * 60
-    private let pollInterval: TimeInterval = 60
+    private var pollInterval: TimeInterval { TimeInterval(settings.pollIntervalSeconds) }
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -49,6 +49,14 @@ final class ReadingStore {
         // the range slider is being dragged), where `.default`-mode timers stall.
         RunLoop.main.add(t, forMode: .common)
         timer = t
+    }
+
+    /// Rebuilds the poll timer at the current `pollInterval` — called when
+    /// `AppSettings.pollIntervalSeconds` changes, so the new interval takes
+    /// effect immediately rather than waiting for the next fire.
+    func restartTimer() {
+        timer?.invalidate()
+        startTimer()
     }
 
     func refresh() {

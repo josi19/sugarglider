@@ -69,6 +69,16 @@ private struct GeneralTab: View {
                     Text("In Dropdown").tag(AppSettings.DeltaDisplay.menu)
                     Text("In Dropdown + Menu Bar").tag(AppSettings.DeltaDisplay.menuAndStatusBar)
                 }
+                LabeledContent("Refresh") {
+                    HStack(spacing: 4) {
+                        Text("Every")
+                        TextField("", value: $settings.pollIntervalSeconds, format: .number)
+                            .labelsHidden()
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 28)
+                        Text("seconds")
+                    }
+                }
             }
         }
         .formStyle(.grouped)

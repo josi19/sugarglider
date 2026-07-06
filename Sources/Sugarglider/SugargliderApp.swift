@@ -9,6 +9,7 @@ struct SugargliderApp: App {
         let settings = AppSettings()
         let store = ReadingStore(settings: settings)
         settings.onConnectionChanged = { [weak store] in store?.reconnect() }
+        settings.onPollIntervalChanged = { [weak store] in store?.restartTimer() }
         _settings = State(initialValue: settings)
         _store = State(initialValue: store)
         store.start()

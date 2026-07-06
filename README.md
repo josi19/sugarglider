@@ -15,9 +15,9 @@ Nightscout site.
 ## Features
 
 - **Glance value in the menu bar** — current glucose with trend arrow, updated
-  every minute. Optionally shows the delta to the previous reading
-  (`5.6 ↗ (+0.1)`). A `⚠` appears when the newest reading is older than
-  ~11 minutes (two missed sensor cycles).
+  on a configurable interval (3–300s, default 60s). Optionally shows the delta
+  to the previous reading (`5.6 ↗ (+0.1)`). A `⚠` appears when the newest
+  reading is older than ~11 minutes (two missed sensor cycles).
 - **Chart dropdown** — click the item for a smoothed chart of the last
   2–48 hours, adjustable with a slider (remembered across launches). Value
   gridlines, a dashed band marking your target range, and hover to inspect any
@@ -34,7 +34,8 @@ Nightscout site.
 - **Light/Dark override** — follow the system or force a theme, applied to the
   dropdown and Settings window.
 - **Native and lightweight** — pure Swift + SwiftUI, zero dependencies, a
-  ~350 KB binary, and one small HTTP request per minute in the background.
+  ~350 KB binary, and one small HTTP request per refresh interval in the
+  background.
 
 ## Requirements
 
@@ -85,11 +86,13 @@ The Colors and Glucose tabs hold the palette and threshold options.
 
 ## How it works
 
-Sugarglider polls `GET {url}/api/v1/entries/sgv.json?count=2` once a minute
-(the second entry supplies the delta), with generous timer tolerance so macOS
-can coalesce wakeups for minimal energy use. Chart history (`count=600`,
-≈ 48 h) is fetched only when the dropdown opens, and at most once per minute —
-moving the range slider re-slices cached data without a new request.
+Sugarglider polls `GET {url}/api/v1/entries/sgv.json?count=2` on the refresh
+interval set in Settings → General (3–300s, default 60s; the second entry
+supplies the delta), with generous timer tolerance so macOS can coalesce
+wakeups for minimal energy use. Chart history (`count=600`, ≈ 48 h) is fetched
+only when the dropdown opens, and at most once per minute regardless of the
+refresh interval — moving the range slider re-slices cached data without a new
+request.
 
 Your data never goes anywhere else: the app talks exclusively to the
 Nightscout URL you configure, and there is no telemetry, analytics, or other

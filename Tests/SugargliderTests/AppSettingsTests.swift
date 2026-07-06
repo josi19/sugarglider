@@ -69,6 +69,13 @@ extension SugargliderTests {
         s.theme = .dark; #expect(s.theme.nsAppearance?.name == .darkAqua)
     }
 
+    @Test func colorSchemeForTheme() {
+        // The Settings window's variant of the override (see Theme.colorScheme).
+        #expect(AppSettings.Theme.system.colorScheme == nil)
+        #expect(AppSettings.Theme.light.colorScheme == .light)
+        #expect(AppSettings.Theme.dark.colorScheme == .dark)
+    }
+
     @Test func deltaDisplayDefaultAndRoundTrip() {
         let s = Self.makeSettings()
         #expect(s.deltaDisplay == .menu)  // default when unset

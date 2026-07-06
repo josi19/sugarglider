@@ -3,8 +3,8 @@ import AppKit
 
 extension View {
     /// Applies the user's theme override to the hosting `NSWindow`'s
-    /// `appearance` (nil follows the system). Window-level appearance is the
-    /// only mechanism that works everywhere it's needed:
+    /// `appearance` (nil follows the system). This is the right mechanism for
+    /// the `MenuBarExtra(.window)` dropdown:
     ///
     /// - `preferredColorScheme` never reaches the borderless panel that
     ///   `MenuBarExtra(.window)` creates, so the dropdown would ignore the
@@ -16,6 +16,12 @@ extension View {
     ///   colors resolving against the system appearance.
     /// - `NSApp.appearance` is deliberately NOT set: that would also retint
     ///   the status-bar item, which must follow the menu bar to stay legible.
+    ///
+    /// It does NOT work for the `Settings` scene window: SwiftUI manages that
+    /// window's `appearance` itself and resets a manual override milliseconds
+    /// after it's applied (verified via KVO on macOS 26). The Settings window
+    /// uses `preferredColorScheme` instead — SwiftUI's own machinery then
+    /// sets the window-level appearance, so AppKit dynamic colors follow too.
     func windowTheme(_ theme: AppSettings.Theme) -> some View {
         background(WindowThemeApplier(appearance: theme.nsAppearance))
     }

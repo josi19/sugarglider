@@ -17,7 +17,14 @@ struct SettingsView: View {
                 .tabItem { Label("Glucose", systemImage: "drop") }
         }
         .frame(width: 500, height: 480)
-        .windowTheme(settings.theme)
+        // NOT `.windowTheme(_:)` here: SwiftUI actively manages the Settings
+        // scene window's `NSWindow.appearance` and resets a manual override
+        // milliseconds after it's applied. `preferredColorScheme` feeds that
+        // same machinery, so SwiftUI sets the window appearance itself —
+        // which also retints the AppKit dynamic colors the preview chart
+        // draws with. The MenuBarExtra dropdown is the opposite case: it
+        // ignores `preferredColorScheme` entirely and needs `.windowTheme`.
+        .preferredColorScheme(settings.theme.colorScheme)
     }
 }
 
@@ -120,12 +127,42 @@ private struct GeneralTab: View {
 }
 
 /// Every configurable chart color and the presets that snapshot them.
+/// A live preview chart is pinned above the (scrolling) form: it reads
+/// `AppSettings` directly, so every picker edit redraws it immediately. The
+/// data is synthetic (`ChartMath.sampleReadings`) — a curve spanning all five
+/// zones relative to the current thresholds — never the user's real readings.
 private struct ColorsTab: View {
     @Bindable var settings: AppSettings
     @State private var showingSavePreset = false
     @State private var newPresetName = ""
 
     var body: some View {
+        VStack(spacing: 0) {
+            preview
+            form
+        }
+    }
+
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ChartCanvas(readings: sampleReadings, rangeHours: 3, settings: settings)
+                .frame(height: 120)
+            Text("Preview — sample data, not your readings")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(EdgeInsets(top: 16, leading: 20, bottom: 8, trailing: 20))
+    }
+
+    private var sampleReadings: [Reading] {
+        ChartMath.sampleReadings(
+            extremeLow: settings.extremeLow, targetLow: settings.targetLow,
+            targetHigh: settings.targetHigh, extremeHigh: settings.extremeHigh,
+            endingAt: Date()
+        )
+    }
+
+    private var form: some View {
         Form {
             Section("Color preset") {
                 Picker("Preset", selection: presetSelection) {
@@ -162,16 +199,10 @@ private struct ColorsTab: View {
             Button("Reset Colors to Default") { settings.resetColors() }
         }
         .formStyle(.grouped)
-        .alert("Save color preset", isPresented: $showingSavePreset) {
-            TextField("Name", text: $newPresetName)
-            Button("Save") {
-                let name = newPresetName.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                settings.saveColorPreset(settings.currentPreset(name: name))
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Type a new name, or pick an existing one to overwrite it.")
+        // A sheet, not an `.alert`: macOS alerts render only TextFields and
+        // Buttons, so a list of existing presets to overwrite can't live there.
+        .sheet(isPresented: $showingSavePreset) {
+            SavePresetSheet(settings: settings, name: $newPresetName)
         }
     }
 
@@ -186,6 +217,69 @@ private struct ColorsTab: View {
                 settings.apply(preset)
             }
         )
+    }
+}
+
+/// The save-preset dialog: type a new name, or click an existing preset to
+/// overwrite it (the click fills the name field; the button relabels to
+/// "Overwrite" whenever the name collides with a saved preset).
+private struct SavePresetSheet: View {
+    var settings: AppSettings
+    @Binding var name: String
+    @Environment(\.dismiss) private var dismiss
+
+    private var trimmed: String { name.trimmingCharacters(in: .whitespaces) }
+    private var overwrites: Bool { settings.colorPresets.contains { $0.name == trimmed } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Save color preset").font(.headline)
+            TextField("Name", text: $name)
+            if !settings.colorPresets.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Or overwrite an existing preset:")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(settings.colorPresets, id: \.name) { preset in
+                                Button { name = preset.name } label: {
+                                    HStack {
+                                        Text(preset.name)
+                                        Spacer()
+                                        if preset.name == trimmed {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                    .padding(.vertical, 3)
+                                    .padding(.horizontal, 6)
+                                    .background(
+                                        preset.name == trimmed ? Color.accentColor.opacity(0.15) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 4)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 120)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(overwrites ? "Overwrite" : "Save") {
+                    settings.saveColorPreset(settings.currentPreset(name: trimmed))
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(trimmed.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
     }
 }
 

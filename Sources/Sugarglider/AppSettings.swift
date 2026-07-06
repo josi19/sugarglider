@@ -161,6 +161,18 @@ final class AppSettings {
             case .dark: return NSAppearance(named: .darkAqua)
             }
         }
+
+        /// The SwiftUI color-scheme override, or nil to follow the system.
+        /// Used (via `preferredColorScheme`) only for the Settings window,
+        /// whose appearance SwiftUI manages itself — see the theme bullet in
+        /// CLAUDE.md's Conventions.
+        var colorScheme: ColorScheme? {
+            switch self {
+            case .system: return nil
+            case .light: return .light
+            case .dark: return .dark
+            }
+        }
     }
     var theme: Theme = .system { didSet { defaults.set(theme.rawValue, forKey: "theme") } }
 

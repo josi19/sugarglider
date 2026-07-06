@@ -67,6 +67,27 @@ extension SugargliderTests {
         #expect(elements(of: ChartMath.smooth([p(0), p(1), p(2)])).count == 3) // moveTo + 2 curves
     }
 
+    @Test func sampleReadingsSweepAllZones() {
+        let end = Date()
+        let readings = ChartMath.sampleReadings(
+            extremeLow: 54, targetLow: 70, targetHigh: 180, extremeHigh: 250, endingAt: end)
+
+        #expect(readings.count == 35)
+        #expect(readings.last?.date == end)
+        #expect(zip(readings, readings.dropFirst()).allSatisfy { $0.date < $1.date })
+        // 5-min spacing → the whole span fits a 3-hour chart window.
+        #expect(readings.first!.date >= end.addingTimeInterval(-3 * 3600))
+
+        // The curve must visit every zone so each configurable color shows.
+        let values = readings.map { Double($0.sgv) }
+        #expect(values.contains { $0 < 54 })            // very low
+        #expect(values.contains { (54..<70).contains($0) })   // below optimal
+        #expect(values.contains { (70...180).contains($0) })  // in range
+        #expect(values.contains { (180...250).contains($0) }) // above optimal
+        #expect(values.contains { $0 > 250 })           // very high
+        #expect(values.allSatisfy { (40...400).contains($0) })
+    }
+
     @Test func nearestIndexFindsClosestByX() {
         let base = Date()
         // `reading(minutesAgo:)` is seconds-since-`base` × 60 in the past, so

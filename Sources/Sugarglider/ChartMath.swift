@@ -75,6 +75,42 @@ enum ChartMath {
         return bestDist < maxDistance ? best : nil
     }
 
+    /// Synthetic readings for the Settings color preview: a smooth curve that
+    /// deliberately sweeps through all five zones *relative to the given
+    /// thresholds* (mg/dL), so every configurable color is visible no matter
+    /// where the user has set their ranges. Oldest-first, 5-minute spacing,
+    /// ending at `end` — shaped like a real trace: in range, a dip to very low,
+    /// recovery, a spike to very high, then settling back in range.
+    static func sampleReadings(extremeLow: Double, targetLow: Double,
+                               targetHigh: Double, extremeHigh: Double,
+                               endingAt end: Date, count: Int = 35) -> [Reading] {
+        let mid = (targetLow + targetHigh) / 2
+        let below = (extremeLow + targetLow) / 2
+        let veryLow = max(40, extremeLow - (targetLow - extremeLow) / 2)
+        let above = (targetHigh + extremeHigh) / 2
+        let veryHigh = min(400, extremeHigh + (extremeHigh - targetHigh) / 2)
+        let keyframes: [(t: Double, v: Double)] = [
+            (0.00, mid), (0.12, below), (0.25, veryLow), (0.45, mid),
+            (0.60, above), (0.75, veryHigh), (1.00, mid),
+        ]
+        // Cosine-eased interpolation between keyframes; Catmull-Rom smoothing
+        // in the chart then rounds off the sampled points.
+        func value(at t: Double) -> Double {
+            guard let i = keyframes.lastIndex(where: { $0.t <= t }), i < keyframes.count - 1 else {
+                return keyframes.last!.v
+            }
+            let (t0, v0) = keyframes[i], (t1, v1) = keyframes[i + 1]
+            let eased = (1 - cos((t - t0) / (t1 - t0) * .pi)) / 2
+            return v0 + (v1 - v0) * eased
+        }
+        let interval: TimeInterval = 5 * 60
+        return (0..<count).map { i in
+            Reading(sgv: Int(value(at: Double(i) / Double(count - 1)).rounded()),
+                    direction: "",
+                    date: end.addingTimeInterval(-Double(count - 1 - i) * interval))
+        }
+    }
+
     /// A "nice" gridline step (1/2/5 × 10ⁿ) giving roughly five lines across the
     /// span — works for both mmol/L and mg/dL ranges.
     static func niceStep(_ span: Double) -> Double {

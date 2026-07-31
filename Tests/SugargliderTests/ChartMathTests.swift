@@ -34,6 +34,14 @@ extension SugargliderTests {
         #expect(ChartMath.labelsNeedDay(span: 72 * 3600))
     }
 
+    /// One constant, two users: the chart breaks its line on a wider gap than
+    /// this, and `ReadingStore` only merges polled entries into the history when
+    /// they join up within it. They must not drift apart.
+    @Test func dropoutThresholdIsSharedWithTheStore() {
+        #expect(ChartMath.dropoutThreshold == 15 * 60)
+        #expect(ReadingStore.contiguityThreshold == ChartMath.dropoutThreshold)
+    }
+
     @Test func segmentsSplitOnDropouts() {
         let base = Date()
         func asc(_ minutes: [Double]) -> [Reading] {   // oldest-first

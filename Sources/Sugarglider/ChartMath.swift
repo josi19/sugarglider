@@ -3,6 +3,12 @@ import SwiftUI
 /// Framework-agnostic chart math, shared by `ChartCanvas`'s drawing and its
 /// tests. Kept free of SwiftUI view state so it's trivially unit-testable.
 enum ChartMath {
+    /// How far apart two readings may be and still count as one continuous run.
+    /// The chart breaks its line on a wider gap rather than interpolating across
+    /// it; `ReadingStore` uses the same value to decide whether freshly polled
+    /// entries join up with the cached history, so the two can't drift apart.
+    static let dropoutThreshold: TimeInterval = 15 * 60
+
     /// The five range-zone thresholds and colors used to color the line and
     /// pick a reading's dot color.
     struct Zones {

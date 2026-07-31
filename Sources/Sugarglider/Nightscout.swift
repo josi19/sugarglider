@@ -64,12 +64,35 @@ enum Nightscout {
         return URLSession(configuration: cfg)
     }()
 
-    /// Fetch the most recent SGV entry.
-    static func fetchLatest(baseURL: String, token: String) async throws -> Reading {
-        guard let latest = try await fetchEntries(count: 1, baseURL: baseURL, token: token).last else {
-            throw NightscoutError.empty
+    /// Reused across requests; every decode happens on the main actor, so one
+    /// instance is enough.
+    private static let decoder = JSONDecoder()
+
+    /// One raw row of `entries/sgv.json`. Decoded leniently — each field
+    /// individually — so a single odd row can't fail the whole response the way
+    /// a strict `Decodable` would: a missing `direction` is normal, and sites
+    /// exist that emit a non-numeric `sgv`. `sgv` is read as a `Double` because
+    /// some uploaders report fractional mg/dL.
+    private struct Entry: Decodable {
+        let sgv: Double?
+        let direction: String?
+        let millis: Double?
+
+        private enum CodingKeys: String, CodingKey { case sgv, direction, date }
+
+        init(from decoder: any Decoder) throws {
+            let row = try decoder.container(keyedBy: CodingKeys.self)
+            sgv = try? row.decodeIfPresent(Double.self, forKey: .sgv)
+            direction = try? row.decodeIfPresent(String.self, forKey: .direction)
+            millis = try? row.decodeIfPresent(Double.self, forKey: .date)
         }
-        return latest
+
+        /// Nil for a row without the two fields a plottable reading needs.
+        var reading: Reading? {
+            guard let sgv, let millis else { return nil }
+            return Reading(sgv: Int(sgv.rounded()), direction: direction ?? "",
+                           date: Date(timeIntervalSince1970: millis / 1000))
+        }
     }
 
     /// Fetch up to `count` recent SGV entries, returned oldest-first so they can
@@ -105,19 +128,10 @@ enum Nightscout {
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw NightscoutError.http(http.statusCode)
         }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        guard let entries = try? decoder.decode([Entry].self, from: data) else {
             throw NightscoutError.decode
         }
-        // `date` is epoch milliseconds; `sgv` is mg/dL. Skip malformed rows.
-        let readings = json.compactMap { entry -> Reading? in
-            guard let sgv = entry["sgv"] as? Int,
-                  let ms = entry["date"] as? Double else { return nil }
-            return Reading(
-                sgv: sgv,
-                direction: entry["direction"] as? String ?? "",
-                date: Date(timeIntervalSince1970: ms / 1000.0)
-            )
-        }.sorted { $0.date < $1.date }
+        let readings = entries.compactMap(\.reading).sorted { $0.date < $1.date }
 
         guard !readings.isEmpty || since != nil else { throw NightscoutError.empty }
         return readings

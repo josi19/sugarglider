@@ -129,11 +129,6 @@ func fetchEntriesAsync(count: Int, since: Date? = nil, baseURL: String,
     } catch { return .failure(error) }
 }
 
-func fetchLatestAsync(baseURL: String, token: String = "") async -> Result<Reading, Error> {
-    do { return .success(try await Nightscout.fetchLatest(baseURL: baseURL, token: token)) }
-    catch { return .failure(error) }
-}
-
 /// Polls `condition` until it holds, then returns; records an issue after ~2s.
 /// `ReadingStore`'s fetches run in detached `Task`s with no handle to await, so
 /// an integration test has to observe the resulting state instead.

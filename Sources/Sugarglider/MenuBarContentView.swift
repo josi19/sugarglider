@@ -9,6 +9,9 @@ struct MenuBarContentView: View {
     /// Tracked so the hours field can be *un*focused deliberately — see
     /// `defocusBackdrop`.
     @FocusState private var rangeFieldFocused: Bool
+    /// Whether the hours cell currently hosts a live `TextField`. False until
+    /// it's clicked — see `rangeField`.
+    @State private var rangeFieldEditing = false
 
     private let contentWidth: CGFloat = 280
 
@@ -66,7 +69,7 @@ struct MenuBarContentView: View {
     private var defocusBackdrop: some View {
         Color.clear
             .contentShape(Rectangle())
-            .onTapGesture { rangeFieldFocused = false }
+            .onTapGesture { endRangeEditing() }
     }
 
     /// An action button shown as a symbol only — so the label survives just as
@@ -87,24 +90,76 @@ struct MenuBarContentView: View {
     /// commits on Return/focus loss instead of reformatting mid-typing, same as
     /// the Settings fields; `AppSettings.rangeHours` clamps whatever is entered
     /// to 2…48, so an out-of-range number snaps back on commit.
+    ///
+    /// It is a **click-to-edit** cell rather than a permanently live
+    /// `TextField`: `MenuBarExtra`'s panel hands its initial focus to the first
+    /// focusable control it finds, so a real field here lit up the moment the
+    /// dropdown opened. Swapping the field in only once it's clicked leaves
+    /// nothing for that focus pass to land on. The box is drawn by hand so the
+    /// two states look identical — same frame, same bezel, nothing appears or
+    /// jumps on click; only the border picks up the accent color while editing,
+    /// standing in for the focus ring that `.plain` doesn't draw.
     private var rangeField: some View {
         HStack(spacing: 3) {
-            TextField("Chart range", value: hoursBinding, format: .number)
-                .labelsHidden()
-                .multilineTextAlignment(.trailing)
-                .font(.system(size: 11, design: .monospaced))
-                .controlSize(.small)
-                .frame(width: 28)
-                .accessibilityLabel("Chart range in hours")
-                .focused($rangeFieldFocused)
-                // Return and Escape both end editing, so the keyboard alone can
-                // get back out of the field.
-                .onSubmit { rangeFieldFocused = false }
-                .onExitCommand { rangeFieldFocused = false }
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(nsColor: .textBackgroundColor))
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(rangeFieldEditing ? Color.accentColor : Color(nsColor: .separatorColor),
+                                  lineWidth: rangeFieldEditing ? 1.5 : 1)
+                if rangeFieldEditing {
+                    TextField("Chart range", value: hoursBinding, format: .number)
+                        .textFieldStyle(.plain)
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .font(rangeFont)
+                        .padding(.trailing, 4)
+                        .accessibilityLabel("Chart range in hours")
+                        .focused($rangeFieldFocused)
+                        // The field is only in the tree while editing, so it can
+                        // ask for the focus itself.
+                        .onAppear { rangeFieldFocused = true }
+                        // Return and Escape both end editing, so the keyboard
+                        // alone can get back out of the field.
+                        .onSubmit { endRangeEditing() }
+                        .onExitCommand { endRangeEditing() }
+                        // Covers a focus loss this view didn't initiate.
+                        .onChange(of: rangeFieldFocused) { _, focused in
+                            if !focused { rangeFieldEditing = false }
+                        }
+                } else {
+                    // No gesture on the ZStack: a tap recognizer wrapping the
+                    // live TextField would compete with its own click handling
+                    // (placing the caret). Only this inert state carries one.
+                    Text("\(settings.rangeHours)")
+                        .font(rangeFont)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(.trailing, 4)
+                        .contentShape(Rectangle())
+                        .onTapGesture { rangeFieldEditing = true }
+                        .accessibilityElement()
+                        .accessibilityLabel("Chart range in hours")
+                        .accessibilityValue("\(settings.rangeHours)")
+                        .accessibilityHint("Click to type an exact number of hours")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { rangeFieldEditing = true }
+                }
+            }
+            .frame(width: 30, height: 18)
             Text("h")
-                .font(.system(size: 11, design: .monospaced))
+                .font(rangeFont)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var rangeFont: Font { .system(size: 11, design: .monospaced) }
+
+    /// Leaves the editing state without depending on the focus transition: if
+    /// the field never got focus in the first place, `onChange` wouldn't fire
+    /// and the cell would stay stuck looking editable.
+    private func endRangeEditing() {
+        rangeFieldFocused = false
+        rangeFieldEditing = false
     }
 
     /// Moving the slider also ends editing: a focused `TextField(value:)` keeps
@@ -114,7 +169,7 @@ struct MenuBarContentView: View {
         Binding(
             get: { Double(settings.rangeHours) },
             set: { newValue in
-                if rangeFieldFocused { rangeFieldFocused = false }
+                if rangeFieldEditing { endRangeEditing() }
                 settings.rangeHours = Int(newValue)
             }
         )

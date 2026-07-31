@@ -172,11 +172,18 @@ a `.dmg` and `checksums.txt`, generates the release notes from the commit log,
 publishes the GitHub release, and commits the updated `CHANGELOG.md` back to
 `main`.
 
+Nothing releases on its own: pushing to `main` only runs CI. `bump=auto`
+additionally refuses when nothing under `Sources/`, `Resources/` or
+`Package.swift` has changed since the last tag — a run of CI-only or docs-only
+commits would otherwise ship a byte-identical app under a new number. Pass an
+explicit `bump=patch` (or push a tag) when you want that anyway.
+
 Everything it does is a script you can run locally, which is the point — a
 release should never be a black box:
 
 ```sh
 scripts/version.sh next auto            # what would the next version be?
+scripts/version.sh app-changed          # …and would the app actually differ?
 scripts/release-notes.sh 1.2.0          # what would the notes say?
 VERSION=1.2.0 UNIVERSAL=1 ./build.sh    # the exact bundle CI produces
 VERSION=1.2.0 scripts/make-dmg.sh

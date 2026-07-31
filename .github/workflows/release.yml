@@ -58,6 +58,12 @@ jobs:
               echo "::error::Tag v${version} already exists. Pick an explicit bump or delete the tag."
               exit 1
             fi
+            # Only guards the auto path: an explicit bump — or a hand-pushed tag —
+            # is a deliberate statement that this should ship regardless.
+            if [[ "${BUMP}" == "auto" ]] && ! scripts/version.sh app-changed; then
+              echo "::error::Nothing under Sources/, Resources/ or Package.swift changed since ${previous}, so the built app would be byte-identical. Re-run with bump=patch (or minor/major) to release anyway."
+              exit 1
+            fi
           fi
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
           echo "previous=${previous}" >> "$GITHUB_OUTPUT"

@@ -5,11 +5,16 @@
 #   scripts/version.sh previous <tag>      → the tag released before <tag>, empty if none
 #   scripts/version.sh next [auto|patch|minor|major]
 #                                          → next version *without* the "v" prefix
+#   scripts/version.sh app-changed [tag]   → exit 0 if the built app would differ
+#                                            from <tag> (default: newest), else 1
 #
 # "auto" derives the bump from the commits since the newest tag:
 #   a `!` marker or a BREAKING CHANGE trailer → major
 #   any feat:                                 → minor
 #   otherwise                                 → patch
+#
+# `next` deliberately always answers with a number — deciding whether a release
+# is warranted at all is `app-changed`'s job, so the two can be used separately.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -58,7 +63,25 @@ detect_bump() {
     printf '%s' "${bump}"
 }
 
+# Paths whose contents end up in the shipped bundle. Everything else — CI,
+# scripts, docs — can change without altering a single byte of the app.
+APP_PATHS=(Sources Resources Package.swift)
+
 case "${1:-}" in
+app-changed)
+    tag="${2:-$(latest_tag)}"
+    if [[ -z "${tag}" ]]; then
+        echo "changed (no release tag yet)"
+        exit 0
+    fi
+    # git diff --quiet exits 1 when there *are* differences, hence the inversion.
+    if git diff --quiet "${tag}" HEAD -- "${APP_PATHS[@]}"; then
+        echo "unchanged since ${tag}"
+        exit 1
+    fi
+    echo "changed since ${tag}"
+    exit 0
+    ;;
 latest)
     latest_tag
     echo
@@ -98,7 +121,7 @@ next)
     echo "${major}.${minor}.${patch}"
     ;;
 *)
-    echo "usage: version.sh {latest|previous <tag>|next [auto|patch|minor|major]}" >&2
+    echo "usage: version.sh {latest|previous <tag>|next [auto|patch|minor|major]|app-changed [tag]}" >&2
     exit 2
     ;;
 esac

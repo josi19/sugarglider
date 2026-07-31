@@ -100,5 +100,7 @@ jobs:
           echo "latest tag:   $(scripts/version.sh latest)"
           echo "next (auto):  $(scripts/version.sh next auto)"
           echo "next (major): $(scripts/version.sh next major)"
+          # Informational here — the release workflow is where this gates.
+          echo "app:          $(scripts/version.sh app-changed || true)"
           echo "--- release notes preview ---"
           scripts/release-notes.sh "$(scripts/version.sh next auto)" | tee -a "$GITHUB_STEP_SUMMARY"

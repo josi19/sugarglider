@@ -16,10 +16,10 @@ struct ChartCanvas: View {
     var rangeHours: Int
     var settings: AppSettings
 
-    /// Gaps longer than this break the line rather than drawing across a dropout.
-    private let gapThreshold: TimeInterval = 15 * 60
-
     @State private var hoverIndex: Int?
+    /// `.onContinuousHover` doesn't hand us the view's size, so track it via a
+    /// zero-cost background GeometryReader.
+    @State private var lastSize: CGSize = .zero
 
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
@@ -58,19 +58,43 @@ struct ChartCanvas: View {
         })
     }
 
-    // `.onContinuousHover` doesn't hand us the view's size, so track it via a
-    // zero-cost background GeometryReader.
-    @State private var lastSize: CGSize = .zero
-
     // MARK: - Geometry (shared between draw and hover)
 
+    /// Everything the drawing and the hover hit-test need to map readings to
+    /// points. Both go through `x(_:)`/`y(_:)`, so the two can't disagree about
+    /// where a reading sits.
     private struct Layout {
         var visible: [Reading]
         var plot: CGRect       // in flipped chart space: minY = bottom, maxY = top
+        var size: CGSize       // the whole canvas, for converting back to screen space
         var start: Date
         var end: Date
         var lo: Double
         var hi: Double
+        var units: AppSettings.Units
+
+        /// Horizontal position of an instant in the window.
+        func x(_ date: Date) -> CGFloat {
+            plot.minX + CGFloat(date.timeIntervalSince(start) / end.timeIntervalSince(start)) * plot.width
+        }
+
+        /// Vertical position of a value *in display units* (chart space, y up).
+        func y(_ value: Double) -> CGFloat {
+            plot.minY + CGFloat((value - lo) / (hi - lo)) * plot.height
+        }
+
+        /// `y(_:)` for an mg/dL value, clamped into the plot — for the threshold
+        /// lines and zone bands, which exist even when they fall off the axis.
+        func bandY(mgdl: Double) -> CGFloat {
+            min(max(y(units.display(mgdl)), plot.minY), plot.maxY)
+        }
+
+        func y(of reading: Reading) -> CGFloat { y(units.value(fromMgdl: reading.sgv)) }
+
+        /// Chart-space y back to the unflipped context's coordinates, for text.
+        func screenY(_ chartY: CGFloat) -> CGFloat { size.height - chartY }
+
+        var span: TimeInterval { end.timeIntervalSince(start) }
     }
 
     private func layout(size: CGSize) -> Layout? {
@@ -105,7 +129,8 @@ struct ChartCanvas: View {
         hi = min(clampHigh, hi.rounded(.up))
         if hi - lo < minSpan { hi = lo + minSpan }
 
-        return Layout(visible: visible, plot: plot, start: start, end: now, lo: lo, hi: hi)
+        return Layout(visible: visible, plot: plot, size: size,
+                      start: start, end: now, lo: lo, hi: hi, units: units)
     }
 
     // MARK: - Draw
@@ -116,26 +141,15 @@ struct ChartCanvas: View {
                       at: CGPoint(x: size.width / 2, y: size.height / 2), anchor: .center)
             return
         }
-        let plot = l.plot
 
-        // Flipped drawing context: y grows upward, so the geometry math below
-        // reads like a conventional bottom-up chart.
+        // Flipped drawing context: y grows upward, so the geometry math in
+        // `Layout` reads like a conventional bottom-up chart. `ctx0` stays
+        // unflipped and is what all text is drawn through.
         var chart = ctx0
         chart.translateBy(x: 0, y: size.height)
         chart.scaleBy(x: 1, y: -1)
-        func screenY(_ chartY: CGFloat) -> CGFloat { size.height - chartY }
 
-        let units = settings.units
-        let targetLow = units.display(settings.targetLow), targetHigh = units.display(settings.targetHigh)
-        func x(_ d: Date) -> CGFloat {
-            plot.minX + CGFloat(d.timeIntervalSince(l.start) / l.end.timeIntervalSince(l.start)) * plot.width
-        }
-        func y(_ v: Double) -> CGFloat {
-            plot.minY + CGFloat((v - l.lo) / (l.hi - l.lo)) * plot.height
-        }
-        func bandY(_ v: Double) -> CGFloat { min(max(y(v), plot.minY), plot.maxY) }
-
-        let clipPath = Path(roundedRect: plot, cornerRadius: 10)
+        let clipPath = Path(roundedRect: l.plot, cornerRadius: 10)
 
         // Optional solid background behind the plot; when off, the menu's
         // glass material shows through.
@@ -150,51 +164,62 @@ struct ChartCanvas: View {
         var inner = chart
         inner.clip(to: clipPath)
 
-        // Horizontal gridlines with value labels.
+        drawGridlines(inner, text: ctx0, layout: l)
+        drawTargetBand(inner, layout: l)
+        drawLine(inner, chart: &chart, layout: l)
+        drawTimeAxis(ctx0, layout: l)
+        drawHover(ctx0, chart: &chart, layout: l)
+    }
+
+    /// Horizontal gridlines with value labels, at "nice" intervals.
+    private func drawGridlines(_ ctx: GraphicsContext, text ctx0: GraphicsContext, layout l: Layout) {
+        let plot = l.plot
         let step = ChartMath.niceStep(l.hi - l.lo)
         var level = (l.lo / step).rounded(.up) * step
         while level <= l.hi {
-            let gy = y(level)
+            let gy = l.y(level)
             var grid = Path()
             grid.move(to: CGPoint(x: plot.minX, y: gy))
             grid.addLine(to: CGPoint(x: plot.maxX, y: gy))
-            inner.stroke(grid, with: .color(Color(nsColor: .separatorColor).opacity(0.35)), lineWidth: 0.5)
+            ctx.stroke(grid, with: .color(Color(nsColor: .separatorColor).opacity(0.35)), lineWidth: 0.5)
 
-            let text = Text(String(format: "%g", level)).font(.system(size: 9)).foregroundStyle(.tertiary)
+            let label = Text(String(format: "%g", level)).font(.system(size: 9)).foregroundStyle(.tertiary)
             let ly = min(max(gy + 2, plot.minY + 1), plot.maxY - 11)
-            ctx0.draw(text, at: CGPoint(x: plot.minX + 5, y: screenY(ly)), anchor: .bottomLeading)
+            ctx0.draw(label, at: CGPoint(x: plot.minX + 5, y: l.screenY(ly)), anchor: .bottomLeading)
             level += step
         }
+    }
 
-        // Optimal-range band with dashed bounds.
-        let yLow = y(targetLow), yHigh = y(targetHigh)
+    /// The optimal-range band, with dashed bounds.
+    private func drawTargetBand(_ ctx: GraphicsContext, layout l: Layout) {
+        let plot = l.plot
+        let yLow = l.y(l.units.display(settings.targetLow))
+        let yHigh = l.y(l.units.display(settings.targetHigh))
         let bandBottom = max(min(yLow, yHigh), plot.minY), bandTop = min(max(yLow, yHigh), plot.maxY)
-        if bandTop > bandBottom {
-            inner.fill(Path(CGRect(x: plot.minX, y: bandBottom, width: plot.width, height: bandTop - bandBottom)),
-                       with: .color(settings.bandColor))
-            let boundColor = settings.bandColor.opacity(0.35)
-            for gy in [bandBottom, bandTop] {
-                var d = Path()
-                d.move(to: CGPoint(x: plot.minX, y: gy))
-                d.addLine(to: CGPoint(x: plot.maxX, y: gy))
-                inner.stroke(d, with: .color(boundColor), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            }
-        }
+        guard bandTop > bandBottom else { return }
 
-        // The line, split across dropouts and smoothed, with a gradient area
-        // fill. Zones top→bottom (chart space): extreme-high, above, in-range,
-        // below, extreme-low.
-        let zones = ChartMath.Zones(
-            extremeLow: settings.extremeLow, targetLow: settings.targetLow,
-            targetHigh: settings.targetHigh, extremeHigh: settings.extremeHigh,
-            extremeLowColor: settings.extremeLowColor, belowColor: settings.belowColor,
-            inRangeColor: settings.inRangeColor, aboveColor: settings.aboveColor,
-            extremeHighColor: settings.extremeHighColor
-        )
-        let exLowY = bandY(units.display(settings.extremeLow))
-        let lowY = bandY(targetLow)
-        let highY = bandY(targetHigh)
-        let exHighY = bandY(units.display(settings.extremeHigh))
+        ctx.fill(Path(CGRect(x: plot.minX, y: bandBottom, width: plot.width, height: bandTop - bandBottom)),
+                 with: .color(settings.bandColor))
+        let boundColor = settings.bandColor.opacity(0.35)
+        for gy in [bandBottom, bandTop] {
+            var bound = Path()
+            bound.move(to: CGPoint(x: plot.minX, y: gy))
+            bound.addLine(to: CGPoint(x: plot.maxX, y: gy))
+            ctx.stroke(bound, with: .color(boundColor), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        }
+    }
+
+    /// The reading line — split across dropouts, smoothed, optionally shaded
+    /// underneath — plus the dot marking the latest reading. `chart` (unclipped)
+    /// is where the dot goes, so its halo may bleed past the rounded corners.
+    private func drawLine(_ inner: GraphicsContext, chart: inout GraphicsContext, layout l: Layout) {
+        let plot = l.plot
+        let zones = zones()
+        // Zone bands, bottom→top in chart space: extreme-low … extreme-high.
+        let exLowY = l.bandY(mgdl: settings.extremeLow)
+        let lowY = l.bandY(mgdl: settings.targetLow)
+        let highY = l.bandY(mgdl: settings.targetHigh)
+        let exHighY = l.bandY(mgdl: settings.extremeHigh)
         let bands: [(CGFloat, CGFloat, Color)] = [
             (plot.minY, exLowY, zones.extremeLowColor),
             (exLowY, lowY, zones.belowColor),
@@ -203,72 +228,86 @@ struct ChartCanvas: View {
             (exHighY, plot.maxY, zones.extremeHighColor),
         ]
 
-        for segment in ChartMath.segments(of: l.visible, gapThreshold: gapThreshold) {
-            let pts = segment.map { CGPoint(x: x($0.date), y: y(units.value(fromMgdl: $0.sgv))) }
+        for segment in ChartMath.segments(of: l.visible, gapThreshold: ChartMath.dropoutThreshold) {
+            let pts = segment.map { CGPoint(x: l.x($0.date), y: l.y(of: $0)) }
             guard pts.count >= 2 else {
                 if let p = pts.first, let r = segment.first {
-                    dot(&inner, at: p, radius: 2, color: ChartMath.color(for: r.sgv, zones: zones))
+                    dot(inner, at: p, radius: 2, color: ChartMath.color(for: r.sgv, zones: zones))
                 }
                 continue
             }
             let path = ChartMath.smooth(pts)
-
-            if settings.lineShadingEnabled {
-                let shade = settings.lineShadingUsesLineColor
-                    ? zones.inRangeColor.opacity(0.14)
-                    : settings.lineShadingColor
-                var area = path
-                area.addLine(to: CGPoint(x: pts.last!.x, y: plot.minY))
-                area.addLine(to: CGPoint(x: pts.first!.x, y: plot.minY))
-                area.closeSubpath()
-                var areaCtx = inner
-                areaCtx.clip(to: area)
-                areaCtx.fill(Path(plot), with: .linearGradient(
-                    Gradient(colors: [shade, shade.opacity(0)]),
-                    startPoint: CGPoint(x: plot.midX, y: plot.maxY), endPoint: CGPoint(x: plot.midX, y: plot.minY)))
-            }
+            if settings.lineShadingEnabled { fillUnder(inner, path: path, points: pts, plot: plot, zones: zones) }
 
             if settings.blendLineColors {
-                strokeBlended(&inner, path: path, bands: bands, plot: plot)
+                strokeBlended(inner, path: path, bands: bands, plot: plot)
             } else {
                 for (minY, maxY, color) in bands where maxY - minY > 0.5 {
                     var bandCtx = inner
                     bandCtx.clip(to: Path(CGRect(x: plot.minX, y: minY, width: plot.width, height: maxY - minY)))
-                    bandCtx.stroke(path, with: .color(color.opacity(0.9)),
-                                   style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    bandCtx.stroke(path, with: .color(color.opacity(0.9)), style: Self.lineStroke)
                 }
             }
         }
 
         // Latest reading: halo + solid dot, both sized by the user (either at 0
-        // hides that part). Drawn unclipped, so the halo can bleed past the
-        // rounded corners slightly.
+        // hides that part).
         if let last = l.visible.last {
-            let p = CGPoint(x: x(last.date), y: y(units.value(fromMgdl: last.sgv)))
-            let c = dotColor(for: last, zones: zones)
+            let p = CGPoint(x: l.x(last.date), y: l.y(of: last))
+            let color = dotColor(for: last, zones: zones)
             if settings.dotHaloRadius > 0 {
-                dot(&chart, at: p, radius: settings.dotHaloRadius, color: c.opacity(0.18))
+                dot(chart, at: p, radius: settings.dotHaloRadius, color: color.opacity(0.18))
             }
             if settings.dotRadius > 0 {
-                dot(&chart, at: p, radius: settings.dotRadius, color: c)
+                dot(chart, at: p, radius: settings.dotRadius, color: color)
             }
         }
-
-        // Time axis (start / latest).
-        let span = l.end.timeIntervalSince(l.start)
-        let startText = Text(Self.timeLabel(l.start, span: span)).font(.system(size: 9)).foregroundStyle(.tertiary)
-        ctx0.draw(startText, at: CGPoint(x: plot.minX, y: screenY(plot.minY) - 2), anchor: .bottomLeading)
-        let endStr = Self.timeLabel(l.visible.last!.date, span: span)
-        let endText = Text(endStr).font(.system(size: 9)).foregroundStyle(.tertiary)
-        ctx0.draw(endText, at: CGPoint(x: plot.maxX, y: screenY(plot.minY) - 2), anchor: .bottomTrailing)
-
-        drawHover(ctx0: ctx0, chart: &chart, x: x, y: y, plot: plot, layout: l, zones: zones, screenY: screenY)
     }
+
+    /// The fading area between the line and the bottom of the plot.
+    private func fillUnder(_ ctx: GraphicsContext, path: Path, points pts: [CGPoint],
+                           plot: CGRect, zones: ChartMath.Zones) {
+        let shade = settings.lineShadingUsesLineColor
+            ? zones.inRangeColor.opacity(0.14)
+            : settings.lineShadingColor
+        var area = path
+        area.addLine(to: CGPoint(x: pts.last!.x, y: plot.minY))
+        area.addLine(to: CGPoint(x: pts.first!.x, y: plot.minY))
+        area.closeSubpath()
+        var areaCtx = ctx
+        areaCtx.clip(to: area)
+        areaCtx.fill(Path(plot), with: .linearGradient(
+            Gradient(colors: [shade, shade.opacity(0)]),
+            startPoint: CGPoint(x: plot.midX, y: plot.maxY), endPoint: CGPoint(x: plot.midX, y: plot.minY)))
+    }
+
+    /// Start and latest timestamps under the plot.
+    private func drawTimeAxis(_ ctx0: GraphicsContext, layout l: Layout) {
+        let baseline = l.screenY(l.plot.minY) - 2
+        for (date, x, anchor) in [(l.start, l.plot.minX, UnitPoint.bottomLeading),
+                                  (l.visible.last!.date, l.plot.maxX, .bottomTrailing)] {
+            let text = Text(Self.timeLabel(date, span: l.span)).font(.system(size: 9)).foregroundStyle(.tertiary)
+            ctx0.draw(text, at: CGPoint(x: x, y: baseline), anchor: anchor)
+        }
+    }
+
+    /// The zone thresholds and colors the line, dots and bands are painted with.
+    private func zones() -> ChartMath.Zones {
+        ChartMath.Zones(
+            extremeLow: settings.extremeLow, targetLow: settings.targetLow,
+            targetHigh: settings.targetHigh, extremeHigh: settings.extremeHigh,
+            extremeLowColor: settings.extremeLowColor, belowColor: settings.belowColor,
+            inRangeColor: settings.inRangeColor, aboveColor: settings.aboveColor,
+            extremeHighColor: settings.extremeHighColor
+        )
+    }
+
+    private static let lineStroke = StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
 
     /// Stroke `path` with a vertical gradient that blends the zone colors into
     /// one another (bottom → top, matching the value axis), so the line's
     /// color shifts smoothly across thresholds instead of switching abruptly.
-    private func strokeBlended(_ ctx: inout GraphicsContext, path: Path, bands: [(CGFloat, CGFloat, Color)], plot: CGRect) {
+    private func strokeBlended(_ ctx: GraphicsContext, path: Path, bands: [(CGFloat, CGFloat, Color)], plot: CGRect) {
         var stops: [Gradient.Stop] = []
         for (minY, maxY, color) in bands where maxY - minY > 0.5 {
             let center = ((minY + maxY) / 2 - plot.minY) / plot.height
@@ -278,17 +317,15 @@ struct ChartCanvas: View {
         ctx.stroke(path, with: .linearGradient(
             Gradient(stops: stops.sorted { $0.location < $1.location }),
             startPoint: CGPoint(x: plot.midX, y: plot.minY), endPoint: CGPoint(x: plot.midX, y: plot.maxY)),
-            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            style: Self.lineStroke)
     }
 
     /// Crosshair + value/time pill at the hovered reading.
-    private func drawHover(ctx0: GraphicsContext, chart: inout GraphicsContext,
-                            x: (Date) -> CGFloat, y: (Double) -> CGFloat, plot: CGRect,
-                            layout l: Layout, zones: ChartMath.Zones, screenY: (CGFloat) -> CGFloat) {
+    private func drawHover(_ ctx0: GraphicsContext, chart: inout GraphicsContext, layout l: Layout) {
         guard let i = hoverIndex, l.visible.indices.contains(i) else { return }
+        let plot = l.plot
         let r = l.visible[i]
-        let units = settings.units
-        let px = x(r.date), py = y(units.value(fromMgdl: r.sgv))
+        let px = l.x(r.date), py = l.y(of: r)
 
         var vline = Path()
         vline.move(to: CGPoint(x: px, y: plot.minY))
@@ -297,10 +334,10 @@ struct ChartCanvas: View {
 
         // The crosshair always needs a visible marker, so this one keeps a floor
         // even when the latest-reading dot is sized down to nothing.
-        dot(&chart, at: CGPoint(x: px, y: py),
-            radius: max(3, settings.dotRadius), color: dotColor(for: r, zones: zones))
+        dot(chart, at: CGPoint(x: px, y: py),
+            radius: max(3, settings.dotRadius), color: dotColor(for: r, zones: zones()))
 
-        let label = "\(r.text(in: units)) · \(Self.timeLabel(r.date, span: l.end.timeIntervalSince(l.start)))"
+        let label = "\(r.text(in: l.units)) · \(Self.timeLabel(r.date, span: l.span))"
         // Resolve once so measurement and drawing share the same text layout.
         let resolved = ctx0.resolve(Text(label).font(.system(size: 10)).foregroundStyle(Color(nsColor: .labelColor)))
         let size = resolved.measure(in: plot.size)
@@ -312,7 +349,7 @@ struct ChartCanvas: View {
         let bg = Path(roundedRect: box, cornerRadius: 5)
         chart.fill(bg, with: .color(Color(nsColor: .controlBackgroundColor).opacity(0.95)))
         chart.stroke(bg, with: .color(Color(nsColor: .separatorColor)), lineWidth: 1)
-        ctx0.draw(resolved, at: CGPoint(x: box.minX + pad, y: screenY(box.minY + pad / 2)), anchor: .bottomLeading)
+        ctx0.draw(resolved, at: CGPoint(x: box.minX + pad, y: l.screenY(box.minY + pad / 2)), anchor: .bottomLeading)
     }
 
     /// The dot color for a reading: its range zone's color by default, or the
@@ -321,7 +358,7 @@ struct ChartCanvas: View {
         settings.dotUsesZoneColor ? ChartMath.color(for: r.sgv, zones: zones) : settings.dotColor
     }
 
-    private func dot(_ ctx: inout GraphicsContext, at p: CGPoint, radius r: CGFloat, color: Color) {
+    private func dot(_ ctx: GraphicsContext, at p: CGPoint, radius r: CGFloat, color: Color) {
         ctx.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(color))
     }
 
@@ -329,9 +366,6 @@ struct ChartCanvas: View {
 
     private func updateHover(at location: CGPoint, size: CGSize) {
         guard let l = layout(size: size) else { return }
-        func x(_ d: Date) -> CGFloat {
-            l.plot.minX + CGFloat(d.timeIntervalSince(l.start) / l.end.timeIntervalSince(l.start)) * l.plot.width
-        }
-        hoverIndex = ChartMath.nearestIndex(to: location.x, x: x, in: l.visible, maxDistance: 24)
+        hoverIndex = ChartMath.nearestIndex(to: location.x, x: l.x, in: l.visible, maxDistance: 24)
     }
 }

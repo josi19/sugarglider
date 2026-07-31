@@ -6,6 +6,40 @@ All notable changes to this project are documented here. The format follows
 from [Conventional Commits](https://www.conventionalcommits.org/) by
 `scripts/changelog.sh` — edit commit messages, not this file.
 
+## [0.2.0](https://github.com/josi19/sugarglider/releases/tag/v0.2.0) — 2026-07-31
+
+### Features
+
+- **settings:** configurable stale delay, full-look presets, dotted numbers ([`3140a8e`](https://github.com/josi19/sugarglider/commit/3140a8e567eefb329acf707b057caf53a1b62e97))
+- **chart:** extend the range to 3 days and fetch history incrementally ([`65477df`](https://github.com/josi19/sugarglider/commit/65477dfa1e334d4d540ca6661df2ea19147736e1))
+- **dropdown:** make the chart range typeable next to the slider ([`a185bef`](https://github.com/josi19/sugarglider/commit/a185bef2f6254a96615a635d47157afcaf4db6f3))
+- **dropdown:** show the action buttons as icons and move Quit to the right ([`4a0e539`](https://github.com/josi19/sugarglider/commit/4a0e53983a46c5b386d478d30fb7a00f43e3619a))
+- **chart:** make the slider, line shading, and latest-reading dot configurable ([`1fe6946`](https://github.com/josi19/sugarglider/commit/1fe694609649f519110340a07b5baabc101dedb6))
+- **ci:** refuse an auto release when the built app wouldn't change ([`a15d1f2`](https://github.com/josi19/sugarglider/commit/a15d1f268929e4845325b1b2b46da2641a92761a))
+
+### Bug fixes
+
+- **chart:** name the weekday once the window spans a day or more ([`981f900`](https://github.com/josi19/sugarglider/commit/981f9006563e32ac1b75b52b09e84e6aa410fdd5))
+- **dropdown:** only edit the chart range when the field is clicked ([`fde7846`](https://github.com/josi19/sugarglider/commit/fde784622b6e4fbbb82e3e6905e3f3841a898753))
+- **ci:** use the non-deprecated depends_on form in the cask template ([`a0166d2`](https://github.com/josi19/sugarglider/commit/a0166d23fa2420ab74839901372443d98f2afa56))
+- **ci:** stage the cask before checking whether it changed ([`04f359e`](https://github.com/josi19/sugarglider/commit/04f359effce57c2c3a7a2e5c1458fd0609f605ba))
+
+### Refactoring
+
+- **chart:** map readings through Layout and split draw per layer ([`1b19ce0`](https://github.com/josi19/sugarglider/commit/1b19ce0072fead442fbe88563f6bf8fd5e149214))
+- **api:** decode Nightscout entries with Codable ([`fca8e3b`](https://github.com/josi19/sugarglider/commit/fca8e3b578417bbdada724190bf21df8b17c03bb))
+
+### Documentation
+
+- drop the removed --no-quarantine flag from install instructions ([`02814cf`](https://github.com/josi19/sugarglider/commit/02814cfc489ebc80061091d64b4b251a091d4e04))
+- changelog for v0.1.0 [skip ci] ([`ba71640`](https://github.com/josi19/sugarglider/commit/ba71640233036b99c4400de5391cdf9213220069))
+
+### Build & CI
+
+- adopt the ExistentialAny and MemberImportVisibility features ([`7741a18`](https://github.com/josi19/sugarglider/commit/7741a18fe383d94f99e67200a5f0b1cb0e14614a))
+
+**Full changelog**: https://github.com/josi19/sugarglider/compare/v0.1.0...v0.2.0
+
 ## [0.1.0](https://github.com/josi19/sugarglider/releases/tag/v0.1.0) — 2026-07-31
 
 ### Features

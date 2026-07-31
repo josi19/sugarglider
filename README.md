@@ -25,7 +25,8 @@ Nightscout site.
   to the previous reading (`5.6 ↗ (+0.1)`). A `⚠` appears when the newest
   reading is older than ~11 minutes (two missed sensor cycles).
 - **Chart dropdown** — click the item for a smoothed chart of the last
-  2–48 hours, adjustable with a slider (remembered across launches). Value
+  2–48 hours, adjustable with a slider in 2h steps or by typing any whole
+  number of hours into the field beside it (remembered across launches). Value
   gridlines, a dashed band marking your target range, and hover to inspect any
   point's exact value and time. Sensor dropouts (gaps > 15 min) break the line
   instead of interpolating across them.

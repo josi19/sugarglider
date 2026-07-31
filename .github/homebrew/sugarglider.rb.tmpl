@@ -10,7 +10,9 @@ cask "sugarglider" do
   homepage "https://github.com/__REPO__"
 
   # @Observable / the Observation framework put the floor at macOS 14.
-  depends_on macos: ">= :sonoma"
+  # A bare symbol already means "this version or newer"; the ">= :sonoma"
+  # string form is deprecated in Homebrew.
+  depends_on macos: :sonoma
 
   app "Sugarglider.app"
 

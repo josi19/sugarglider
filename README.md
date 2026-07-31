@@ -25,8 +25,9 @@ Nightscout site.
   to the previous reading (`5.6 ↗ (+0.1)`). A `⚠` appears when the newest
   reading is older than ~11 minutes (two missed sensor cycles).
 - **Chart dropdown** — click the item for a smoothed chart of the last
-  2–48 hours, adjustable with a slider in 2h steps or by typing any whole
-  number of hours into the field beside it (remembered across launches). Value
+  2–72 hours (up to 3 days), adjustable with a slider in 2h steps or by typing
+  any whole number of hours into the field beside it (remembered across
+  launches). Value
   gridlines, a dashed band marking your target range, and hover to inspect any
   point's exact value and time. Sensor dropouts (gaps > 15 min) break the line
   instead of interpolating across them.
@@ -129,10 +130,14 @@ The Colors and Glucose tabs hold the palette and threshold options.
 Sugarglider polls `GET {url}/api/v1/entries/sgv.json?count=2` on the refresh
 interval set in Settings → General (3–300s, default 60s; the second entry
 supplies the delta), with generous timer tolerance so macOS can coalesce
-wakeups for minimal energy use. Chart history (`count=600`, ≈ 48 h) is fetched
-only when the dropdown opens, and at most once per minute regardless of the
-refresh interval — moving the range slider re-slices cached data without a new
-request.
+wakeups for minimal energy use. Chart history is fetched only when the dropdown
+opens, and at most once per minute regardless of the refresh interval. Only the
+selected window is requested, and only once: after that the cache is topped up
+with `find[date][$gt]=<newest cached entry>`, which normally returns a handful
+of readings or none at all — and the entries the 60s poll already carries are
+folded in, so opening the dropdown often needs no request. Narrowing the range
+re-slices cached data; widening it past what has been fetched pulls the missing
+history once.
 
 Your data never goes anywhere else: the app talks exclusively to the
 Nightscout URL you configure, and there is no telemetry, analytics, or other

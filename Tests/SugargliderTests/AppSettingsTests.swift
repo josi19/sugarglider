@@ -45,8 +45,10 @@ extension SugargliderTests {
         #expect(s.rangeHours == 6)        // default when unset
         s.rangeHours = 24
         #expect(s.rangeHours == 24)
-        s.rangeHours = 100                // clamped to 48
-        #expect(s.rangeHours == 48)
+        s.rangeHours = 72                 // the widest range, 3 days
+        #expect(s.rangeHours == 72)
+        s.rangeHours = 100                // clamped to 72
+        #expect(s.rangeHours == 72)
         s.rangeHours = 1                  // clamped to 2
         #expect(s.rangeHours == 2)
         s.rangeHours = -5                 // clamped to 2

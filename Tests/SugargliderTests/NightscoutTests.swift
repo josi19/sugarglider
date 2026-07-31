@@ -69,6 +69,44 @@ extension SugargliderTests {
         #expect(errorText(await fetchEntriesAsync(count: 10, baseURL: server.baseURL)) == "No readings")
     }
 
+    /// "Nothing new" is the expected answer for an incremental top-up, so an
+    /// empty response must not be an error when `since` is set.
+    @Test func fetchSinceToleratesEmptyResponse() async throws {
+        let server = try LocalHTTPServer(json: "[]")
+        defer { server.stop() }
+        let readings = try #require(successReadings(
+            await fetchEntriesAsync(count: 10, since: Date(), baseURL: server.baseURL)))
+        #expect(readings.isEmpty)
+    }
+
+    @Test func fetchSinceSendsTheDateFilterInMilliseconds() async throws {
+        let server = try LocalHTTPServer(json: """
+            [{"sgv":100,"direction":"Flat","date":1700000400000}]
+            """)
+        defer { server.stop() }
+
+        let since = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = await fetchEntriesAsync(count: 10, since: since, baseURL: server.baseURL)
+        let line = try #require(server.requestLines.first)
+        // Percent-encoded by URLComponents; Nightscout's query parser decodes it.
+        #expect(line.contains("date%5D%5B$gt%5D=1700000000000")
+                || line.contains("date][$gt]=1700000000000"))
+        #expect(line.contains("count=10"))
+    }
+
+    /// The plain fetch must stay plain — no stray filter that would make the
+    /// first, full history request return only recent entries.
+    @Test func fetchWithoutSinceSendsNoDateFilter() async throws {
+        let server = try LocalHTTPServer(json: """
+            [{"sgv":100,"direction":"Flat","date":1700000400000}]
+            """)
+        defer { server.stop() }
+
+        _ = await fetchEntriesAsync(count: 10, baseURL: server.baseURL)
+        let line = try #require(server.requestLines.first)
+        #expect(!line.contains("gt"))
+    }
+
     @Test func fetchNonJSONIsDecodeError() async throws {
         let server = try LocalHTTPServer(json: "not json at all")
         defer { server.stop() }

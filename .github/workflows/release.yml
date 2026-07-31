@@ -277,11 +277,14 @@ jobs:
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          # Stage first, then compare against the index: a plain `git diff` only
+          # looks at tracked files, so the very first release — where the cask is
+          # a new untracked file — would read as "nothing changed".
+          git add Casks/sugarglider.rb
+          if git diff --cached --quiet; then
             echo "Cask already at ${VERSION}."
             exit 0
           fi
-          git add Casks/sugarglider.rb
           git commit -m "sugarglider ${VERSION}"
           # -u origin HEAD rather than a bare push: a tap repo created without an
           # initial commit clones to an unborn branch with no upstream.

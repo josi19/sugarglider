@@ -8,12 +8,9 @@ struct SugargliderApp: App {
     init() {
         let settings = AppSettings()
         let store = ReadingStore(settings: settings)
-        settings.onConnectionChanged = { [weak store] in store?.reconnect() }
-        settings.onPollIntervalChanged = { [weak store] in store?.restartTimer() }
-        settings.onRangeHoursChanged = { [weak store] in store?.ensureHistoryCoverage() }
         _settings = State(initialValue: settings)
         _store = State(initialValue: store)
-        store.start()
+        store.start()   // subscribes to `settings`, then begins polling
     }
 
     var body: some Scene {
@@ -32,7 +29,8 @@ struct SugargliderApp: App {
 }
 
 /// The status-bar item's own title: value, an enlarged trend arrow, the
-/// bracketed delta (if enabled for the bar), and a staleness warning glyph.
+/// bracketed delta (if enabled for the bar), and — once the reading is stale —
+/// a warning glyph with the reading's age.
 private struct MenuBarLabel: View {
     var settings: AppSettings
     var store: ReadingStore
@@ -60,8 +58,12 @@ private struct MenuBarLabel: View {
         if settings.deltaDisplay == .menuAndStatusBar, let delta = store.deltaText() {
             t = t + Text("  (\(delta))").font(.system(size: 13, design: .monospaced))
         }
+        // A stale value is worth more than a glyph: how stale decides whether
+        // it's a blip worth ignoring or a feed that stopped. Deliberately the
+        // only escalation — the app never notifies, since short gaps are normal
+        // and it can't tell a sensor gap from an uploader or network one.
         if store.isStale {
-            t = t + Text(" ⚠").font(.system(size: 13, design: .monospaced))
+            t = t + Text(" ⚠ \(ReadingStore.compactAge(r.date))").font(.system(size: 13, design: .monospaced))
         }
         return t
     }

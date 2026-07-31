@@ -76,7 +76,13 @@ final class AppSettings {
     static let defaultAboveColor = Color(nsColor: .labelColor)
     static let defaultExtremeLowColor = Color(nsColor: .labelColor)
     static let defaultExtremeHighColor = Color(nsColor: .labelColor)
-    static let defaultSliderColor = Color(nsColor: .labelColor)
+    /// Translucent by default, matching the peak opacity of the gradient the
+    /// area fill used before it became configurable.
+    static let defaultLineShadingColor = Color(nsColor: .labelColor).opacity(0.14)
+    static let defaultDotColor = Color(nsColor: .labelColor)
+    /// A stand-in for the stock slider's neutral grey fill, so the default look
+    /// is unchanged from when `sliderColor` was (silently) ignored.
+    static let defaultSliderColor = Color(nsColor: .tertiaryLabelColor)
     // Opaque starting swatch so the color picker's opacity slider opens at 100%
     // rather than trapping a freshly-picked color at zero alpha. Whether it's
     // actually painted is governed by `chartBackgroundEnabled`.
@@ -88,6 +94,8 @@ final class AppSettings {
     var aboveColor: Color = defaultAboveColor { didSet { persistColor(aboveColor, "aboveColor") } }
     var extremeLowColor: Color = defaultExtremeLowColor { didSet { persistColor(extremeLowColor, "extremeLowColor") } }
     var extremeHighColor: Color = defaultExtremeHighColor { didSet { persistColor(extremeHighColor, "extremeHighColor") } }
+    var lineShadingColor: Color = defaultLineShadingColor { didSet { persistColor(lineShadingColor, "lineShadingColor") } }
+    var dotColor: Color = defaultDotColor { didSet { persistColor(dotColor, "dotColor") } }
     var sliderColor: Color = defaultSliderColor { didSet { persistColor(sliderColor, "sliderColor") } }
     var chartBackgroundColor: Color = defaultChartBackgroundColor { didSet { persistColor(chartBackgroundColor, "chartBackgroundColor") } }
 
@@ -99,7 +107,45 @@ final class AppSettings {
     /// vertical gradient instead of switching abruptly at each boundary.
     var blendLineColors: Bool = false { didSet { defaults.set(blendLineColors, forKey: "blendLineColors") } }
 
-    /// Restore all colors to their monochromatic defaults and clear the background.
+    /// Whether the area between the line and the bottom of the plot is filled
+    /// with a fading gradient. On by default — the chart has always drawn it.
+    var lineShadingEnabled: Bool = true { didSet { defaults.set(lineShadingEnabled, forKey: "lineShadingEnabled") } }
+
+    /// When true (the default, and what the chart did before the shading became
+    /// configurable) the shading is derived from the in-range zone color rather
+    /// than from `lineShadingColor`, so it follows the line's palette.
+    var lineShadingUsesLineColor: Bool = true {
+        didSet { defaults.set(lineShadingUsesLineColor, forKey: "lineShadingUsesLineColor") }
+    }
+
+    /// When true (the default) the dot marking the latest reading is colored by
+    /// that reading's range zone — a low reading shows a low-colored dot —
+    /// rather than by the fixed `dotColor`.
+    var dotUsesZoneColor: Bool = true { didSet { defaults.set(dotUsesZoneColor, forKey: "dotUsesZoneColor") } }
+
+    /// Radius of the latest-reading dot and of the soft halo behind it, in
+    /// points. Either at 0 hides that part; both are clamped to a range that
+    /// can't swallow the chart.
+    static let defaultDotRadius: Double = 4
+    static let defaultDotHaloRadius: Double = 7
+
+    var dotRadius: Double = defaultDotRadius {
+        didSet {
+            let clamped = min(12, max(0, dotRadius))
+            if clamped != dotRadius { dotRadius = clamped; return }   // re-enter with the clamped value
+            defaults.set(dotRadius, forKey: "dotRadius")
+        }
+    }
+    var dotHaloRadius: Double = defaultDotHaloRadius {
+        didSet {
+            let clamped = min(24, max(0, dotHaloRadius))
+            if clamped != dotHaloRadius { dotHaloRadius = clamped; return }
+            defaults.set(dotHaloRadius, forKey: "dotHaloRadius")
+        }
+    }
+
+    /// Restore all colors — and the shading/dot appearance they belong to — to
+    /// their defaults, and clear the background.
     func resetColors() {
         bandColor = Self.defaultBandColor
         inRangeColor = Self.defaultInRangeColor
@@ -107,9 +153,16 @@ final class AppSettings {
         aboveColor = Self.defaultAboveColor
         extremeLowColor = Self.defaultExtremeLowColor
         extremeHighColor = Self.defaultExtremeHighColor
+        lineShadingColor = Self.defaultLineShadingColor
+        dotColor = Self.defaultDotColor
         sliderColor = Self.defaultSliderColor
         chartBackgroundColor = Self.defaultChartBackgroundColor
         chartBackgroundEnabled = false
+        lineShadingEnabled = true
+        lineShadingUsesLineColor = true
+        dotUsesZoneColor = true
+        dotRadius = Self.defaultDotRadius
+        dotHaloRadius = Self.defaultDotHaloRadius
     }
 
     // MARK: - Color presets
@@ -117,7 +170,8 @@ final class AppSettings {
     /// The archive keys of every configurable color. A preset is just a snapshot
     /// keyed by these, so it round-trips through the same color storage.
     static let colorKeys = ["bandColor", "inRangeColor", "belowColor", "aboveColor",
-                            "extremeLowColor", "extremeHighColor", "sliderColor", "chartBackgroundColor"]
+                            "extremeLowColor", "extremeHighColor", "lineShadingColor", "dotColor",
+                            "sliderColor", "chartBackgroundColor"]
 
     /// A named snapshot of every chart color plus the background-enable flag, so a
     /// user can keep several palettes and switch between them.
@@ -242,6 +296,8 @@ final class AppSettings {
         if let c = preset.colors["aboveColor"] { aboveColor = c }
         if let c = preset.colors["extremeLowColor"] { extremeLowColor = c }
         if let c = preset.colors["extremeHighColor"] { extremeHighColor = c }
+        if let c = preset.colors["lineShadingColor"] { lineShadingColor = c }
+        if let c = preset.colors["dotColor"] { dotColor = c }
         if let c = preset.colors["sliderColor"] { sliderColor = c }
         if let c = preset.colors["chartBackgroundColor"] { chartBackgroundColor = c }
         chartBackgroundEnabled = preset.backgroundEnabled
@@ -271,6 +327,8 @@ final class AppSettings {
         case "aboveColor": return aboveColor
         case "extremeLowColor": return extremeLowColor
         case "extremeHighColor": return extremeHighColor
+        case "lineShadingColor": return lineShadingColor
+        case "dotColor": return dotColor
         case "sliderColor": return sliderColor
         case "chartBackgroundColor": return chartBackgroundColor
         default: return nil
@@ -296,10 +354,19 @@ final class AppSettings {
         aboveColor = Self.loadColor("aboveColor", default: Self.defaultAboveColor, from: defaults)
         extremeLowColor = Self.loadColor("extremeLowColor", default: Self.defaultExtremeLowColor, from: defaults)
         extremeHighColor = Self.loadColor("extremeHighColor", default: Self.defaultExtremeHighColor, from: defaults)
+        lineShadingColor = Self.loadColor("lineShadingColor", default: Self.defaultLineShadingColor, from: defaults)
+        dotColor = Self.loadColor("dotColor", default: Self.defaultDotColor, from: defaults)
         sliderColor = Self.loadColor("sliderColor", default: Self.defaultSliderColor, from: defaults)
         chartBackgroundColor = Self.loadColor("chartBackgroundColor", default: Self.defaultChartBackgroundColor, from: defaults)
         chartBackgroundEnabled = defaults.bool(forKey: "chartBackgroundEnabled")
         blendLineColors = defaults.bool(forKey: "blendLineColors")
+        // `object(forKey:)`, not `bool(forKey:)` — these default to *true*, and
+        // an unset key would otherwise read back as false.
+        if let v = defaults.object(forKey: "lineShadingEnabled") as? Bool { lineShadingEnabled = v }
+        if let v = defaults.object(forKey: "lineShadingUsesLineColor") as? Bool { lineShadingUsesLineColor = v }
+        if let v = defaults.object(forKey: "dotUsesZoneColor") as? Bool { dotUsesZoneColor = v }
+        if let v = defaults.object(forKey: "dotRadius") as? Double { dotRadius = v }
+        if let v = defaults.object(forKey: "dotHaloRadius") as? Double { dotHaloRadius = v }
         colorPresets = Self.loadPresets(from: defaults)
         if let v = defaults.object(forKey: "rangeHours") as? Int { rangeHours = v }
         if let v = defaults.string(forKey: "theme").flatMap(Theme.init) { theme = v }

@@ -96,6 +96,48 @@ extension SugargliderTests {
         #expect(s.blendLineColors == true)
     }
 
+    /// These three default to *true*, so they can't be loaded with
+    /// `bool(forKey:)` — an unset key would read back as false and silently
+    /// turn the shading and zone-colored dot off on first launch.
+    @Test func trueByDefaultFlagsSurviveAnEmptyStore() {
+        let s = Self.makeSettings()
+        #expect(s.lineShadingEnabled == true)
+        #expect(s.lineShadingUsesLineColor == true)
+        #expect(s.dotUsesZoneColor == true)
+    }
+
+    @Test func trueByDefaultFlagsRoundTripWhenTurnedOff() {
+        let defaults = UserDefaults(suiteName: "SugargliderTests-\(UUID().uuidString)")!
+        let s = AppSettings(defaults: defaults)
+        s.lineShadingEnabled = false
+        s.lineShadingUsesLineColor = false
+        s.dotUsesZoneColor = false
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.lineShadingEnabled == false)
+        #expect(reloaded.lineShadingUsesLineColor == false)
+        #expect(reloaded.dotUsesZoneColor == false)
+    }
+
+    @Test func dotSizeDefaultsClampingAndRoundTrip() {
+        let defaults = UserDefaults(suiteName: "SugargliderTests-\(UUID().uuidString)")!
+        let s = AppSettings(defaults: defaults)
+        #expect(s.dotRadius == AppSettings.defaultDotRadius)
+        #expect(s.dotHaloRadius == AppSettings.defaultDotHaloRadius)
+
+        s.dotRadius = 0                 // 0 is a valid value: hides the dot
+        #expect(s.dotRadius == 0)
+        s.dotRadius = -3                // clamped
+        #expect(s.dotRadius == 0)
+        s.dotRadius = 99                // clamped
+        #expect(s.dotRadius == 12)
+        s.dotHaloRadius = 99
+        #expect(s.dotHaloRadius == 24)
+
+        s.dotRadius = 6.5
+        #expect(AppSettings(defaults: defaults).dotRadius == 6.5)
+    }
+
     @Test func isConfigured() {
         let s = Self.makeSettings()
         #expect(s.isConfigured == false)         // empty
@@ -170,6 +212,8 @@ extension SugargliderTests {
         #expect(AppSettings.colorsMatch(s.inRangeColor, AppSettings.defaultInRangeColor))
         #expect(AppSettings.colorsMatch(s.bandColor, AppSettings.defaultBandColor))
         #expect(AppSettings.colorsMatch(s.sliderColor, AppSettings.defaultSliderColor))
+        #expect(AppSettings.colorsMatch(s.lineShadingColor, AppSettings.defaultLineShadingColor))
+        #expect(AppSettings.colorsMatch(s.dotColor, AppSettings.defaultDotColor))
     }
 
     @Test func colorRoundTripThroughArchive() {
@@ -190,6 +234,26 @@ extension SugargliderTests {
         #expect(s.chartBackgroundEnabled == false)
     }
 
+    @Test func resetColorsRestoresShadingAndDotAppearance() {
+        let s = Self.makeSettings()
+        s.lineShadingEnabled = false
+        s.lineShadingUsesLineColor = false
+        s.lineShadingColor = Color(red: 1, green: 0, blue: 0, opacity: 1)
+        s.dotUsesZoneColor = false
+        s.dotColor = Color(red: 0, green: 1, blue: 0, opacity: 1)
+        s.dotRadius = 1
+        s.dotHaloRadius = 20
+
+        s.resetColors()
+        #expect(s.lineShadingEnabled == true)
+        #expect(s.lineShadingUsesLineColor == true)
+        #expect(s.dotUsesZoneColor == true)
+        #expect(s.dotRadius == AppSettings.defaultDotRadius)
+        #expect(s.dotHaloRadius == AppSettings.defaultDotHaloRadius)
+        #expect(AppSettings.colorsMatch(s.lineShadingColor, AppSettings.defaultLineShadingColor))
+        #expect(AppSettings.colorsMatch(s.dotColor, AppSettings.defaultDotColor))
+    }
+
     @Test func colorsMatchComparesResolvedChannels() {
         let red = Color(red: 1, green: 0, blue: 0, opacity: 1)
         #expect(AppSettings.colorsMatch(red, red))
@@ -201,11 +265,29 @@ extension SugargliderTests {
 // MARK: - Color presets
 
 extension SugargliderTests {
-    @Test func colorKeysAreTheEightConfigurableColors() {
+    @Test func colorKeysAreEveryConfigurableColor() {
         #expect(AppSettings.colorKeys == [
             "bandColor", "inRangeColor", "belowColor", "aboveColor",
-            "extremeLowColor", "extremeHighColor", "sliderColor", "chartBackgroundColor",
+            "extremeLowColor", "extremeHighColor", "lineShadingColor", "dotColor",
+            "sliderColor", "chartBackgroundColor",
         ])
+    }
+
+    /// Every key in `colorKeys` must be wired into both directions of the
+    /// preset round-trip — a key that `apply` or `currentPreset` doesn't know
+    /// about would make `matchingPreset()` permanently report "Custom".
+    @Test func everyColorKeyRoundTripsThroughAPreset() {
+        let s = Self.makeSettings()
+        let distinct = AppSettings.colorKeys.enumerated().reduce(into: [String: Color]()) { dict, pair in
+            dict[pair.element] = Color(red: Double(pair.offset) / 16, green: 0.3, blue: 0.7, opacity: 1)
+        }
+        s.apply(.init(name: "P", colors: distinct, backgroundEnabled: true))
+        let snapshot = s.currentPreset(name: "P")
+        for key in AppSettings.colorKeys {
+            let expected = try! #require(distinct[key])
+            let actual = try! #require(snapshot.colors[key], "\(key) missing from currentPreset")
+            #expect(AppSettings.colorsMatch(actual, expected), "\(key) not applied")
+        }
     }
 
     @Test func presetsDefaultEmpty() {

@@ -1,0 +1,24 @@
+# Rendered into <tap>/Casks/sugarglider.rb by .github/workflows/release.yml.
+# Placeholders are substituted with sed — keep them literal.
+cask "sugarglider" do
+  version "__VERSION__"
+  sha256 "__SHA256__"
+
+  url "https://github.com/__REPO__/releases/download/v#{version}/Sugarglider-#{version}.zip"
+  name "Sugarglider"
+  desc "Nightscout blood glucose in the macOS menu bar"
+  homepage "https://github.com/__REPO__"
+
+  # @Observable / the Observation framework put the floor at macOS 14.
+  depends_on macos: ">= :sonoma"
+
+  app "Sugarglider.app"
+
+  uninstall quit: "dev.nevermind.sugarglider"
+
+  zap trash: [
+    "~/Library/Preferences/dev.nevermind.sugarglider.plist",
+    "~/Library/Caches/dev.nevermind.sugarglider",
+    "~/Library/HTTPStorages/dev.nevermind.sugarglider",
+  ]
+end

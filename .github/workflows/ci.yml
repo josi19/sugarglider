@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build & test
+    # Pinned rather than macos-latest so a runner-image rollover can't turn a
+    # green branch red overnight. Bump deliberately.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Assemble app bundle (universal)
+        env:
+          UNIVERSAL: "1"
+        run: ./build.sh
+
+      - name: Verify bundle
+        run: |
+          set -euo pipefail
+          lipo -info Sugarglider.app/Contents/MacOS/Sugarglider
+          lipo -info Sugarglider.app/Contents/MacOS/Sugarglider | grep -q 'arm64'
+          lipo -info Sugarglider.app/Contents/MacOS/Sugarglider | grep -q 'x86_64'
+          codesign --verify --strict --verbose=2 Sugarglider.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Sugarglider.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sugarglider.app/Contents/Info.plist
+
+      - name: Package for download
+        run: |
+          mkdir -p dist
+          # ditto, not zip: preserves the bundle's signature and symlinks.
+          ditto -c -k --keepParent Sugarglider.app dist/Sugarglider.zip
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sugarglider-${{ github.sha }}
+          path: dist/Sugarglider.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  lint:
+    name: Lint shell scripts & workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # shellcheck ships with the Ubuntu runner image; actionlint does not.
+      - name: shellcheck
+        run: shellcheck build.sh scripts/*.sh
+
+      # Pinned: an unpinned installer would let an upstream change break CI, and
+      # this one is piped straight into bash.
+      - name: actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.7"
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar xz actionlint
+          ./actionlint -color
+
+  release-scripts:
+    name: Smoke-test release scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # The version/changelog logic decides what a release is *called* and what
+      # it *says*, so a broken script must fail here rather than mid-release.
+      - name: Exercise version + changelog generation
+        run: |
+          set -euo pipefail
+          echo "latest tag:   $(scripts/version.sh latest)"
+          echo "next (auto):  $(scripts/version.sh next auto)"
+          echo "next (major): $(scripts/version.sh next major)"
+          echo "--- release notes preview ---"
+          scripts/release-notes.sh "$(scripts/version.sh next auto)" | tee -a "$GITHUB_STEP_SUMMARY"

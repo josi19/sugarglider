@@ -23,7 +23,7 @@ struct MenuBarContentView: View {
             HStack(spacing: 6) {
                 // TintedSlider, not SwiftUI's Slider: the stock control's track
                 // ignores every tint mechanism macOS offers — see TintedSlider.
-                TintedSlider(value: rangeBinding, range: 2...48, step: 2,
+                TintedSlider(value: rangeBinding, range: rangeSliderBounds, step: 2,
                              tint: settings.sliderColor,
                              accessibilityValueText: "\(settings.rangeHours) hours")
                     .accessibilityLabel("Chart range")
@@ -89,7 +89,7 @@ struct MenuBarContentView: View {
     /// slider next to it moves in 2h steps. Value-based (not text-based) so it
     /// commits on Return/focus loss instead of reformatting mid-typing, same as
     /// the Settings fields; `AppSettings.rangeHours` clamps whatever is entered
-    /// to 2…48, so an out-of-range number snaps back on commit.
+    /// to 2…72, so an out-of-range number snaps back on commit.
     ///
     /// It is a **click-to-edit** cell rather than a permanently live
     /// `TextField`: `MenuBarExtra`'s panel hands its initial focus to the first
@@ -177,6 +177,10 @@ struct MenuBarContentView: View {
 
     private var hoursBinding: Binding<Int> {
         Binding(get: { settings.rangeHours }, set: { settings.rangeHours = $0 })
+    }
+
+    private var rangeSliderBounds: ClosedRange<Double> {
+        Double(AppSettings.rangeHoursLimits.lowerBound)...Double(AppSettings.rangeHoursLimits.upperBound)
     }
 
     /// Opens Settings in front *and key*. An accessory (LSUIElement) app is

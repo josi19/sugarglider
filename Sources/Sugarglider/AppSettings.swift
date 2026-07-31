@@ -21,6 +21,11 @@ final class AppSettings {
     /// initial load.
     var onPollIntervalChanged: (() -> Void)?
 
+    /// Fired when `rangeHours` changes, so `ReadingStore` can fetch the history
+    /// a *widened* window needs — the cache is only ever sized to the window
+    /// that was asked for. Not called during `init`'s initial load.
+    var onRangeHoursChanged: (() -> Void)?
+
     /// Base URL of the Nightscout instance, e.g. "https://my-cgm.up.railway.app".
     var baseURL: String = "" {
         didSet {
@@ -197,12 +202,20 @@ final class AppSettings {
         colorPresets.removeAll { $0.name == name }
     }
 
-    /// Selected chart window in hours (2–48, in 2h steps). Defaults to 6.
+    /// Bounds for `rangeHours`. Single source of truth: the slider's range, the
+    /// clamp below and `ReadingStore`'s history sizing all read it, since a
+    /// wider window silently needs a longer fetch to fill it.
+    static let rangeHoursLimits: ClosedRange<Int> = 2...72
+
+    /// Selected chart window in hours (2–72, in 2h steps on the slider; any
+    /// whole hour can be typed). Defaults to 6.
     var rangeHours: Int = 6 {
         didSet {
-            let clamped = min(48, max(2, rangeHours))
+            let clamped = min(Self.rangeHoursLimits.upperBound,
+                              max(Self.rangeHoursLimits.lowerBound, rangeHours))
             if clamped != rangeHours { rangeHours = clamped; return }   // re-enter with the clamped value
             defaults.set(rangeHours, forKey: "rangeHours")
+            if oldValue != rangeHours { onRangeHoursChanged?() }
         }
     }
 

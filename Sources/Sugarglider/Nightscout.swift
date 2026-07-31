@@ -74,7 +74,15 @@ enum Nightscout {
 
     /// Fetch up to `count` recent SGV entries, returned oldest-first so they can
     /// be plotted left-to-right.
-    static func fetchEntries(count: Int, baseURL: String, token: String) async throws -> [Reading] {
+    ///
+    /// `since` restricts the response to entries *newer* than that instant
+    /// (Nightscout's Mongo-style `find[date][$gt]` on the epoch-millisecond
+    /// `date` field), which is what makes topping a cached history up cheap
+    /// instead of re-downloading the whole window. An empty response is an
+    /// error only for a full fetch: with `since` set, "nothing new since then"
+    /// is the normal, expected answer.
+    static func fetchEntries(count: Int, since: Date? = nil,
+                             baseURL: String, token: String) async throws -> [Reading] {
         var base = baseURL.trimmingCharacters(in: .whitespaces)
         guard !base.isEmpty else { throw NightscoutError.notConfigured }
         while base.hasSuffix("/") { base.removeLast() }
@@ -83,6 +91,10 @@ enum Nightscout {
             throw NightscoutError.badURL
         }
         var items = [URLQueryItem(name: "count", value: String(count))]
+        if let since {
+            let ms = (since.timeIntervalSince1970 * 1000).rounded()
+            items.append(URLQueryItem(name: "find[date][$gt]", value: String(Int64(ms))))
+        }
         let token = token.trimmingCharacters(in: .whitespaces)
         if !token.isEmpty { items.append(URLQueryItem(name: "token", value: token)) }
         comps.queryItems = items
@@ -107,7 +119,7 @@ enum Nightscout {
             )
         }.sorted { $0.date < $1.date }
 
-        guard !readings.isEmpty else { throw NightscoutError.empty }
+        guard !readings.isEmpty || since != nil else { throw NightscoutError.empty }
         return readings
     }
 

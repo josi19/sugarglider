@@ -28,6 +28,16 @@ final class LocalHTTPServer {
     private let fd: Int32
     private var stopped = false
 
+    /// Request lines ("GET /path?query HTTP/1.1") as received, so a test can
+    /// assert on what the client actually asked for. Written from the serving
+    /// thread, read from the test's, hence the lock.
+    private static let requestsLock = NSLock()
+    nonisolated(unsafe) private static var requestsByPort: [UInt16: [String]] = [:]
+
+    var requestLines: [String] {
+        Self.requestsLock.withLock { Self.requestsByPort[port] ?? [] }
+    }
+
     enum ServerError: Error { case socketFailed, bindFailed, listenFailed }
 
     init(status: Int = 200, json: String) throws {
@@ -63,12 +73,20 @@ final class LocalHTTPServer {
         // there's no reference back to `self` (and thus no init-order trouble).
         let serverFD = sock
         let statusCode = status
+        let servedPort = self.port
         Thread.detachNewThread {
             while true {
                 let client = accept(serverFD, nil, nil)
                 if client < 0 { break }              // socket closed by stop() → exit
                 var buf = [UInt8](repeating: 0, count: 4096)
-                _ = read(client, &buf, buf.count)    // drain the request; content ignored
+                let read_ = read(client, &buf, buf.count)
+                if read_ > 0,
+                   let request = String(bytes: buf[0..<read_], encoding: .utf8),
+                   let line = request.split(separator: "\r\n").first {
+                    Self.requestsLock.withLock {
+                        Self.requestsByPort[servedPort, default: []].append(String(line))
+                    }
+                }
                 let reason = statusCode == 200 ? "OK"
                     : (statusCode == 500 ? "Internal Server Error" : "Status")
                 let head = "HTTP/1.1 \(statusCode) \(reason)\r\n"
@@ -96,20 +114,41 @@ final class LocalHTTPServer {
         guard !stopped else { return }
         stopped = true
         close(fd)   // unblocks accept() so the serving thread exits
+        Self.requestsLock.withLock { Self.requestsByPort[port] = nil }
     }
 
     deinit { stop() }
 }
 
 /// Bridge `Nightscout`'s throwing async API to `Result` for concise tests.
-func fetchEntriesAsync(count: Int, baseURL: String, token: String = "") async -> Result<[Reading], Error> {
-    do { return .success(try await Nightscout.fetchEntries(count: count, baseURL: baseURL, token: token)) }
-    catch { return .failure(error) }
+func fetchEntriesAsync(count: Int, since: Date? = nil, baseURL: String,
+                       token: String = "") async -> Result<[Reading], Error> {
+    do {
+        return .success(try await Nightscout.fetchEntries(count: count, since: since,
+                                                         baseURL: baseURL, token: token))
+    } catch { return .failure(error) }
 }
 
 func fetchLatestAsync(baseURL: String, token: String = "") async -> Result<Reading, Error> {
     do { return .success(try await Nightscout.fetchLatest(baseURL: baseURL, token: token)) }
     catch { return .failure(error) }
+}
+
+/// Polls `condition` until it holds, then returns; records an issue after ~2s.
+/// `ReadingStore`'s fetches run in detached `Task`s with no handle to await, so
+/// an integration test has to observe the resulting state instead.
+@MainActor
+func waitUntil(_ what: String, _ condition: () -> Bool) async throws {
+    for _ in 0..<200 {
+        if condition() { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("timed out waiting for \(what)")
+}
+
+/// Epoch milliseconds, rounded the way `Nightscout.fetchEntries` rounds them.
+func epochMillis(_ date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1000).rounded())
 }
 
 /// A `Reading` at a fixed offset before a shared "now", for deterministic tests.

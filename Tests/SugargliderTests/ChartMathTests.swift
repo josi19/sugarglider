@@ -26,6 +26,14 @@ extension SugargliderTests {
         #expect(abs(ChartMath.niceStep(2) - 0.5) < 1e-9)
     }
 
+    @Test func labelsNeedDayOnceAWindowCanRepeatAClockTime() {
+        #expect(ChartMath.labelsNeedDay(span: 6 * 3600) == false)
+        #expect(ChartMath.labelsNeedDay(span: 23.5 * 3600) == false)
+        // A day or wider puts the same clock time at both ends of the axis.
+        #expect(ChartMath.labelsNeedDay(span: 24 * 3600))
+        #expect(ChartMath.labelsNeedDay(span: 72 * 3600))
+    }
+
     @Test func segmentsSplitOnDropouts() {
         let base = Date()
         func asc(_ minutes: [Double]) -> [Reading] {   // oldest-first

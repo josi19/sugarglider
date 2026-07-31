@@ -111,6 +111,14 @@ enum ChartMath {
         }
     }
 
+    /// Whether time labels have to name the weekday as well as the clock time.
+    ///
+    /// A window of a full day or more can put the *same* clock time at both ends
+    /// of the axis — 72h ago is "15:03" just like now — which reads as a chart
+    /// spanning nothing at all. Below a day the two ends always differ, so the
+    /// bare time stays unambiguous and shorter.
+    static func labelsNeedDay(span: TimeInterval) -> Bool { span >= 24 * 3600 }
+
     /// A "nice" gridline step (1/2/5 × 10ⁿ) giving roughly five lines across the
     /// span — works for both mmol/L and mg/dL ranges.
     static func niceStep(_ span: Double) -> Double {

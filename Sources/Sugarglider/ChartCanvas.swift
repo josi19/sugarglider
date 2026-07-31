@@ -27,6 +27,20 @@ struct ChartCanvas: View {
         return f
     }()
 
+    /// Used instead of `timeFmt` on wide windows — see `ChartMath.labelsNeedDay`.
+    /// The pattern stays fixed 24h like `timeFmt` (the weekday abbreviation still
+    /// localizes through the formatter's locale) so both variants read alike.
+    private static let dayTimeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "E HH:mm"
+        return f
+    }()
+
+    /// Time label for `date` in a window spanning `span`.
+    private static func timeLabel(_ date: Date, span: TimeInterval) -> String {
+        (ChartMath.labelsNeedDay(span: span) ? dayTimeFmt : timeFmt).string(from: date)
+    }
+
     var body: some View {
         Canvas { context, size in
             draw(context: context, size: size)
@@ -241,9 +255,10 @@ struct ChartCanvas: View {
         }
 
         // Time axis (start / latest).
-        let startText = Text(Self.timeFmt.string(from: l.start)).font(.system(size: 9)).foregroundStyle(.tertiary)
+        let span = l.end.timeIntervalSince(l.start)
+        let startText = Text(Self.timeLabel(l.start, span: span)).font(.system(size: 9)).foregroundStyle(.tertiary)
         ctx0.draw(startText, at: CGPoint(x: plot.minX, y: screenY(plot.minY) - 2), anchor: .bottomLeading)
-        let endStr = Self.timeFmt.string(from: l.visible.last!.date)
+        let endStr = Self.timeLabel(l.visible.last!.date, span: span)
         let endText = Text(endStr).font(.system(size: 9)).foregroundStyle(.tertiary)
         ctx0.draw(endText, at: CGPoint(x: plot.maxX, y: screenY(plot.minY) - 2), anchor: .bottomTrailing)
 
@@ -285,7 +300,7 @@ struct ChartCanvas: View {
         dot(&chart, at: CGPoint(x: px, y: py),
             radius: max(3, settings.dotRadius), color: dotColor(for: r, zones: zones))
 
-        let label = "\(r.text(in: units)) · \(Self.timeFmt.string(from: r.date))"
+        let label = "\(r.text(in: units)) · \(Self.timeLabel(r.date, span: l.end.timeIntervalSince(l.start)))"
         // Resolve once so measurement and drawing share the same text layout.
         let resolved = ctx0.resolve(Text(label).font(.system(size: 10)).foregroundStyle(Color(nsColor: .labelColor)))
         let size = resolved.measure(in: plot.size)

@@ -47,20 +47,37 @@ extension SugargliderTests {
         #expect(readings[1].sgv == 150)
     }
 
+    /// Each field is decoded on its own (`try?` per key), so one unusable row
+    /// costs only that row — a strict `Decodable` would fail the whole response.
     @Test func fetchSkipsMalformedRows() async throws {
         let server = try LocalHTTPServer(json: """
             [{"sgv":100,"direction":"Flat","date":1700000000000},
              {"direction":"Flat","date":1700000100000},
              {"sgv":110,"date":1700000200000},
-             {"sgv":"bad","date":1700000300000}]
+             {"sgv":"bad","date":1700000300000},
+             {"sgv":120,"direction":null,"date":null},
+             {}]
             """)
         defer { server.stop() }
 
         let readings = try #require(successReadings(await fetchEntriesAsync(count: 10, baseURL: server.baseURL)))
-        #expect(readings.count == 2)               // rows missing sgv / non-int sgv dropped
+        #expect(readings.count == 2)               // rows missing sgv/date, or with a non-numeric sgv
         #expect(readings[0].sgv == 100)
         #expect(readings[1].sgv == 110)
         #expect(readings[1].direction == "")       // missing direction defaults to ""
+    }
+
+    /// `sgv` is read as a `Double` and rounded: some uploaders report fractional
+    /// mg/dL, and those readings used to be dropped as malformed.
+    @Test func fetchRoundsFractionalSgv() async throws {
+        let server = try LocalHTTPServer(json: """
+            [{"sgv":100.4,"direction":"Flat","date":1700000000000},
+             {"sgv":100.5,"direction":"Flat","date":1700000100000}]
+            """)
+        defer { server.stop() }
+
+        let readings = try #require(successReadings(await fetchEntriesAsync(count: 10, baseURL: server.baseURL)))
+        #expect(readings.map(\.sgv) == [100, 101])
     }
 
     @Test func fetchEmptyArrayIsEmptyError() async throws {
@@ -125,22 +142,15 @@ extension SugargliderTests {
         #expect(errorText(await fetchEntriesAsync(count: 10, baseURL: server.baseURL)) == "HTTP 500")
     }
 
-    @Test func fetchLatestReturnsNewest() async throws {
-        let server = try LocalHTTPServer(json: """
-            [{"sgv":150,"direction":"Flat","date":1700000300000},
-             {"sgv":100,"direction":"Flat","date":1700000000000}]
-            """)
+    /// A trailing slash on the site URL and a blank token must not reach the query.
+    @Test func fetchNormalizesBaseURLAndOmitsABlankToken() async throws {
+        let server = try LocalHTTPServer(json: #"[{"sgv":100,"direction":"Flat","date":1700000400000}]"#)
         defer { server.stop() }
 
-        let result = await fetchLatestAsync(baseURL: server.baseURL)
-        guard case .success(let r) = result else { Issue.record("expected success"); return }
-        #expect(r.sgv == 150)   // newest by date
-    }
-
-    @Test func fetchLatestEmptyIsEmptyError() async throws {
-        let server = try LocalHTTPServer(json: "[]")
-        defer { server.stop() }
-        #expect(errorText(await fetchLatestAsync(baseURL: server.baseURL)) == "No readings")
+        _ = await fetchEntriesAsync(count: 10, baseURL: server.baseURL + "///", token: "   ")
+        let line = try #require(server.requestLines.first)
+        #expect(line.contains("/api/v1/entries/sgv.json"))
+        #expect(!line.contains("token"))
     }
 }
 

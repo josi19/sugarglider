@@ -33,6 +33,11 @@ Nightscout site.
   above / very high), either switching at each threshold or blending smoothly.
   Every color is independently pickable with opacity, palettes can be saved as
   named presets, and the monochrome defaults follow Light/Dark mode.
+- **Tunable chart details** — the shading under the line can be switched off or
+  given its own color, the dot on the latest reading has adjustable size and
+  halo (either down to zero to hide it) and can keep its zone color or take a
+  fixed one, and the range slider's track color is yours to pick. A live preview
+  in Settings shows every change as you make it.
 - **mmol/L or mg/dL** — switch the display unit any time; values are stored in
   mg/dL (Nightscout's native unit), so nothing drifts on conversion.
 - **Configurable thresholds** — target range and very-low/very-high bounds,

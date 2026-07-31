@@ -15,8 +15,12 @@ struct MenuBarContentView: View {
                 .frame(width: contentWidth, height: 160)
 
             HStack(spacing: 8) {
-                Slider(value: rangeBinding, in: 2...48, step: 2)
-                    .tint(settings.sliderColor)
+                // TintedSlider, not SwiftUI's Slider: the stock control's track
+                // ignores every tint mechanism macOS offers — see TintedSlider.
+                TintedSlider(value: rangeBinding, range: 2...48, step: 2,
+                             tint: settings.sliderColor,
+                             accessibilityValueText: "\(settings.rangeHours) hours")
+                    .accessibilityLabel("Chart range")
                 Text("\(settings.rangeHours) h")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)

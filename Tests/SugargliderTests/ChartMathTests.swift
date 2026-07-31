@@ -146,6 +146,27 @@ extension SugargliderTests {
         #expect(renderedImage(chart) != nil)   // exercises the blended-gradient stroke + background fill
     }
 
+    @Test func rendersWithShadingOffAndDotHidden() {
+        let s = Self.makeSettings()
+        s.lineShadingEnabled = false
+        s.dotRadius = 0
+        s.dotHaloRadius = 0
+        let chart = ChartCanvas(readings: spanningReadings(from: Date()), rangeHours: 6, settings: s)
+        #expect(renderedImage(chart) != nil)   // every optional layer skipped
+    }
+
+    @Test func rendersWithCustomShadingAndDotColors() {
+        let s = Self.makeSettings()
+        s.lineShadingUsesLineColor = false
+        s.lineShadingColor = Color(red: 0.9, green: 0.2, blue: 0.4, opacity: 0.3)
+        s.dotUsesZoneColor = false
+        s.dotColor = Color(red: 0.1, green: 0.9, blue: 0.5, opacity: 1)
+        s.dotRadius = 12
+        s.dotHaloRadius = 24
+        let chart = ChartCanvas(readings: spanningReadings(from: Date()), rangeHours: 6, settings: s)
+        #expect(renderedImage(chart) != nil)   // fixed colors + the largest allowed dot
+    }
+
     @Test func rendersWithGapsAndIsolatedPoints() {
         let base = Date()
         let s = Self.makeSettings()

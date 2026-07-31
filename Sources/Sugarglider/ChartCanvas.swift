@@ -60,7 +60,11 @@ struct ChartCanvas: View {
     }
 
     private func layout(size: CGSize) -> Layout? {
-        let leftInset: CGFloat = 0.5, rightInset: CGFloat = 0.5
+        let leftInset: CGFloat = 0.5
+        // The newest reading sits exactly at the plot's right edge, so its dot
+        // and halo need room there or the `Canvas` frame clips them in half.
+        // Capped so a big halo can't squeeze a narrow chart out of existence.
+        let rightInset = min(max(0.5, settings.dotRadius, settings.dotHaloRadius), size.width / 4)
         let topInset: CGFloat = 10, bottomInset: CGFloat = 16
         let plot = CGRect(
             x: leftInset, y: bottomInset,
@@ -195,15 +199,20 @@ struct ChartCanvas: View {
             }
             let path = ChartMath.smooth(pts)
 
-            var area = path
-            area.addLine(to: CGPoint(x: pts.last!.x, y: plot.minY))
-            area.addLine(to: CGPoint(x: pts.first!.x, y: plot.minY))
-            area.closeSubpath()
-            var areaCtx = inner
-            areaCtx.clip(to: area)
-            areaCtx.fill(Path(plot), with: .linearGradient(
-                Gradient(colors: [zones.inRangeColor.opacity(0.14), zones.inRangeColor.opacity(0)]),
-                startPoint: CGPoint(x: plot.midX, y: plot.maxY), endPoint: CGPoint(x: plot.midX, y: plot.minY)))
+            if settings.lineShadingEnabled {
+                let shade = settings.lineShadingUsesLineColor
+                    ? zones.inRangeColor.opacity(0.14)
+                    : settings.lineShadingColor
+                var area = path
+                area.addLine(to: CGPoint(x: pts.last!.x, y: plot.minY))
+                area.addLine(to: CGPoint(x: pts.first!.x, y: plot.minY))
+                area.closeSubpath()
+                var areaCtx = inner
+                areaCtx.clip(to: area)
+                areaCtx.fill(Path(plot), with: .linearGradient(
+                    Gradient(colors: [shade, shade.opacity(0)]),
+                    startPoint: CGPoint(x: plot.midX, y: plot.maxY), endPoint: CGPoint(x: plot.midX, y: plot.minY)))
+            }
 
             if settings.blendLineColors {
                 strokeBlended(&inner, path: path, bands: bands, plot: plot)
@@ -217,13 +226,18 @@ struct ChartCanvas: View {
             }
         }
 
-        // Latest reading: halo + solid dot, colored by its range zone (drawn
-        // unclipped, so the halo can bleed past the rounded corners slightly).
+        // Latest reading: halo + solid dot, both sized by the user (either at 0
+        // hides that part). Drawn unclipped, so the halo can bleed past the
+        // rounded corners slightly.
         if let last = l.visible.last {
             let p = CGPoint(x: x(last.date), y: y(units.value(fromMgdl: last.sgv)))
-            let c = ChartMath.color(for: last.sgv, zones: zones)
-            dot(&chart, at: p, radius: 7, color: c.opacity(0.18))
-            dot(&chart, at: p, radius: 4, color: c)
+            let c = dotColor(for: last, zones: zones)
+            if settings.dotHaloRadius > 0 {
+                dot(&chart, at: p, radius: settings.dotHaloRadius, color: c.opacity(0.18))
+            }
+            if settings.dotRadius > 0 {
+                dot(&chart, at: p, radius: settings.dotRadius, color: c)
+            }
         }
 
         // Time axis (start / latest).
@@ -266,7 +280,10 @@ struct ChartCanvas: View {
         vline.addLine(to: CGPoint(x: px, y: plot.maxY))
         chart.stroke(vline, with: .color(Color(nsColor: .labelColor).opacity(0.25)), lineWidth: 1)
 
-        dot(&chart, at: CGPoint(x: px, y: py), radius: 4, color: ChartMath.color(for: r.sgv, zones: zones))
+        // The crosshair always needs a visible marker, so this one keeps a floor
+        // even when the latest-reading dot is sized down to nothing.
+        dot(&chart, at: CGPoint(x: px, y: py),
+            radius: max(3, settings.dotRadius), color: dotColor(for: r, zones: zones))
 
         let label = "\(r.text(in: units)) · \(Self.timeFmt.string(from: r.date))"
         // Resolve once so measurement and drawing share the same text layout.
@@ -281,6 +298,12 @@ struct ChartCanvas: View {
         chart.fill(bg, with: .color(Color(nsColor: .controlBackgroundColor).opacity(0.95)))
         chart.stroke(bg, with: .color(Color(nsColor: .separatorColor)), lineWidth: 1)
         ctx0.draw(resolved, at: CGPoint(x: box.minX + pad, y: screenY(box.minY + pad / 2)), anchor: .bottomLeading)
+    }
+
+    /// The dot color for a reading: its range zone's color by default, or the
+    /// user's fixed `dotColor` when they've opted out of zone coloring.
+    private func dotColor(for r: Reading, zones: ChartMath.Zones) -> Color {
+        settings.dotUsesZoneColor ? ChartMath.color(for: r.sgv, zones: zones) : settings.dotColor
     }
 
     private func dot(_ ctx: inout GraphicsContext, at p: CGPoint, radius r: CGFloat, color: Color) {

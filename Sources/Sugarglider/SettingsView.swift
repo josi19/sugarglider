@@ -145,6 +145,7 @@ private struct ColorsTab: View {
     @Bindable var settings: AppSettings
     @State private var showingSavePreset = false
     @State private var newPresetName = ""
+    @State private var previewSliderValue = 0.6
 
     var body: some View {
         VStack(spacing: 0) {
@@ -157,6 +158,12 @@ private struct ColorsTab: View {
         VStack(alignment: .leading, spacing: 4) {
             ChartCanvas(readings: sampleReadings, rangeHours: 3, settings: settings)
                 .frame(height: 120)
+            // Mirrors the dropdown's range slider purely so the slider color is
+            // previewable; it drives local state, not `rangeHours`.
+            TintedSlider(value: $previewSliderValue, range: 0...1, tint: settings.sliderColor,
+                         accessibilityValueText: "preview only")
+                .accessibilityLabel("Range slider color preview")
+                .padding(.top, 2)
             Text("Preview — sample data, not your readings")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -200,9 +207,23 @@ private struct ColorsTab: View {
                 ColorPicker("Very low", selection: $settings.extremeLowColor)
                 Toggle("Blend line colors", isOn: $settings.blendLineColors)
             }
+            Section("Line shading") {
+                Toggle("Shade below the line", isOn: $settings.lineShadingEnabled)
+                Toggle("Match line color", isOn: $settings.lineShadingUsesLineColor)
+                    .disabled(!settings.lineShadingEnabled)
+                ColorPicker("Shading color", selection: $settings.lineShadingColor)
+                    .disabled(!settings.lineShadingEnabled || settings.lineShadingUsesLineColor)
+            }
+            Section("Latest reading dot") {
+                sizeRow("Dot size", value: $settings.dotRadius, range: 0...12)
+                sizeRow("Halo size", value: $settings.dotHaloRadius, range: 0...24)
+                Toggle("Match zone color", isOn: $settings.dotUsesZoneColor)
+                ColorPicker("Dot color", selection: $settings.dotColor)
+                    .disabled(settings.dotUsesZoneColor)
+            }
             Section("Chart") {
                 ColorPicker("Range band", selection: $settings.bandColor)
-                ColorPicker("Slider", selection: $settings.sliderColor)
+                ColorPicker("Range slider", selection: $settings.sliderColor)
                 Toggle("Graph background", isOn: $settings.chartBackgroundEnabled)
                 ColorPicker("Background color", selection: $settings.chartBackgroundColor)
             }
@@ -213,6 +234,27 @@ private struct ColorsTab: View {
         // Buttons, so a list of existing presets to overwrite can't live there.
         .sheet(isPresented: $showingSavePreset) {
             SavePresetSheet(settings: settings, name: $newPresetName)
+        }
+    }
+
+    /// A point-size row: a slider plus the live value. Stock `Slider` is fine
+    /// here — nothing needs tinting inside Settings. It's continuous with a
+    /// rounding binding rather than `step:`, because a stepped macOS slider
+    /// draws one tick mark per step and half-point granularity turns the row
+    /// into a wall of dots.
+    private func sizeRow(_ label: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+        let halfPoints = Binding(
+            get: { value.wrappedValue },
+            set: { value.wrappedValue = ($0 * 2).rounded() / 2 }
+        )
+        return LabeledContent(label) {
+            HStack(spacing: 8) {
+                Slider(value: halfPoints, in: range)
+                Text(String(format: "%g", value.wrappedValue))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, alignment: .trailing)
+            }
         }
     }
 

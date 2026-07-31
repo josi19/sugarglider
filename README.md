@@ -2,6 +2,12 @@
 
 **Your Nightscout blood glucose, always visible in the macOS menu bar.**
 
+[![CI](https://github.com/josi19/sugarglider/actions/workflows/ci.yml/badge.svg)](https://github.com/josi19/sugarglider/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/josi19/sugarglider?sort=semver&label=release)](https://github.com/josi19/sugarglider/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/josi19/sugarglider/total?label=downloads)](https://github.com/josi19/sugarglider/releases)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Sugarglider is a tiny native menu-bar app for [Nightscout](https://nightscout.github.io)
 users. It shows your latest reading, its trend arrow, and how fresh it is — e.g.
 `5.6 ↗` — and opens a chart of recent history when clicked. No Dock icon, no
@@ -45,7 +51,34 @@ Nightscout site.
 
 ## Install
 
-Build from source:
+### Download
+
+Grab the latest `.dmg` (or `.zip`) from the
+[releases page](https://github.com/josi19/sugarglider/releases/latest) and drag
+**Sugarglider.app** into `/Applications`. The build is a universal binary, so it
+runs natively on both Apple silicon and Intel.
+
+Releases are ad-hoc signed rather than notarized by Apple, so macOS quarantines
+the app on first launch. Either right-click it → **Open** → **Open**, or clear
+the flag yourself:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Sugarglider.app
+```
+
+Every release ships a `checksums.txt`; verify your download with
+`shasum -a 256 -c checksums.txt`.
+
+### Homebrew
+
+```sh
+brew install --cask josi19/tap/sugarglider
+```
+
+The same quarantine caveat applies, so either clear the flag afterwards or skip
+it up front with `brew install --cask --no-quarantine josi19/tap/sugarglider`.
+
+### Build from source
 
 ```sh
 git clone https://github.com/josi19/sugarglider.git
@@ -103,11 +136,71 @@ on your Mac.
 
 ```sh
 swift build     # debug build
-swift test      # run the test suite
+swift test      # run the test suite (needs Xcode, not just the CLT)
 ./build.sh      # release build + assemble Sugarglider.app
 ```
 
-Contributions are welcome — feel free to open an issue or pull request.
+CI builds and tests every push and pull request on macOS, including a universal
+(arm64 + x86_64) release build, and lints the shell scripts and workflows.
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the setup,
+the architecture in a paragraph, and the commit-message convention (the changelog
+and version numbers are generated from it). Past releases are in
+[CHANGELOG.md](CHANGELOG.md).
+
+## Releasing
+
+Maintainers only. Two ways in, both landing in the same
+[release workflow](.github/workflows/release.yml):
+
+```sh
+# Let the workflow pick the version from the Conventional Commits since the
+# last tag, then tag, build and publish:
+gh workflow run release.yml -f bump=auto
+
+# …or force a level, or rehearse without publishing anything:
+gh workflow run release.yml -f bump=minor
+gh workflow run release.yml -f bump=auto -f dry_run=true
+
+# …or just push a tag yourself:
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+The workflow runs the tests, builds a universal signed bundle, packages a `.zip`,
+a `.dmg` and `checksums.txt`, generates the release notes from the commit log,
+publishes the GitHub release, and commits the updated `CHANGELOG.md` back to
+`main`.
+
+Everything it does is a script you can run locally, which is the point — a
+release should never be a black box:
+
+```sh
+scripts/version.sh next auto            # what would the next version be?
+scripts/release-notes.sh 1.2.0          # what would the notes say?
+VERSION=1.2.0 UNIVERSAL=1 ./build.sh    # the exact bundle CI produces
+VERSION=1.2.0 scripts/make-dmg.sh
+```
+
+### Optional repository configuration
+
+Everything below is optional — without it releases still build and publish,
+just ad-hoc signed and without the Homebrew cask.
+
+| Secret / variable            | Type     | Effect when set                                         |
+| ---------------------------- | -------- | ------------------------------------------------------- |
+| `MACOS_CERTIFICATE_P12`      | secret   | Developer ID cert (base64 `.p12`); enables real signing |
+| `MACOS_CERTIFICATE_PASSWORD` | secret   | Password for that `.p12`                                |
+| `MACOS_SIGN_IDENTITY`        | secret   | e.g. `Developer ID Application: Name (TEAMID)`          |
+| `APPLE_ID`                   | secret   | Apple ID; enables notarization and stapling             |
+| `APPLE_TEAM_ID`              | secret   | Team ID for notarization                                |
+| `APPLE_APP_PASSWORD`         | secret   | App-specific password for notarization                  |
+| `HOMEBREW_TAP_TOKEN`         | secret   | PAT with `contents:write` on the tap; updates the cask  |
+| `HOMEBREW_TAP_REPO`          | variable | Tap repo, defaults to `<owner>/homebrew-tap`            |
+
+Base64-encode the certificate with
+`base64 -i cert.p12 | pbcopy`. Once the Apple secrets exist the workflow signs
+and notarizes automatically, and the Gatekeeper warning disappears from the
+release notes.
 
 ## Disclaimer
 

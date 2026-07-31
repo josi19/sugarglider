@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest something Sugarglider should do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sugarglider deliberately stays a small, native, dependency-free menu-bar
+        app that only reads from your own Nightscout site. Suggestions that keep
+        it that way are the easiest to say yes to.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you run into, not just the feature.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like it to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered

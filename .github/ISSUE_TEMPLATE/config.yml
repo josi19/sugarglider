@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Nightscout setup help
+    url: https://nightscout.github.io/
+    about: Problems with the Nightscout site itself (hosting, uploader, tokens) are best answered by the Nightscout project.
+  - name: Security issue
+    url: https://github.com/josi19/sugarglider/security/advisories/new
+    about: Report a vulnerability privately instead of opening a public issue.

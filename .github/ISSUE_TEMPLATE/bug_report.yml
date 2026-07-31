@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in Sugarglider doesn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you paste anything:** Sugarglider talks to *your* Nightscout site.
+        Please redact your **site URL** and never include an **access token** — a
+        token in a public issue lets anyone read your glucose history. Screenshots
+        of the chart contain real readings; crop or blur them if you'd rather not
+        share them.
+
+  - type: input
+    id: version
+    attributes:
+      label: Sugarglider version
+      description: Menu bar → Settings, or `defaults read /Applications/Sugarglider.app/Contents/Info CFBundleShortVersionString`
+      placeholder: "1.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.2 (Apple silicon)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the dropdown
+        2. Drag the range slider to 48 h
+        3. …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Menu bar item (value, trend, staleness)
+        - Chart dropdown
+        - Settings — connection
+        - Settings — colors
+        - Settings — glucose thresholds
+        - Install / launch / updating
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: |
+        Console output can help. Filter for the app with:
+        `log show --predicate 'process == "Sugarglider"' --last 10m`
+      render: shell

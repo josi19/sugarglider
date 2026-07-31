@@ -1,0 +1,9 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entries are generated
+from [Conventional Commits](https://www.conventionalcommits.org/) by
+`scripts/changelog.sh` — edit commit messages, not this file.
+
+_No releases yet. The first one will replace this line._

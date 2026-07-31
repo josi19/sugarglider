@@ -21,7 +21,7 @@ jobs:
     # green branch red overnight. Bump deliberately.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Show toolchain
         run: |
@@ -56,7 +56,7 @@ jobs:
           ditto -c -k --keepParent Sugarglider.app dist/Sugarglider.zip
 
       - name: Upload build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Sugarglider-${{ github.sha }}
           path: dist/Sugarglider.zip
@@ -67,7 +67,7 @@ jobs:
     name: Lint shell scripts & workflows
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # shellcheck ships with the Ubuntu runner image; actionlint does not.
       - name: shellcheck
@@ -88,7 +88,7 @@ jobs:
     name: Smoke-test release scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

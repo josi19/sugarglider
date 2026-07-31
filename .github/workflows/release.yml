@@ -33,7 +33,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       zip_sha256: ${{ steps.checksums.outputs.zip_sha256 }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # version + changelog need the full tag/commit history
 
@@ -188,7 +188,7 @@ jobs:
           cat "${RUNNER_TEMP}/notes.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Sugarglider-${{ steps.version.outputs.version }}
           path: dist/
@@ -250,7 +250,7 @@ jobs:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Push cask to tap
         env:

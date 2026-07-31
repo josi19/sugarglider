@@ -73,10 +73,11 @@ Every release ships a `checksums.txt`; verify your download with
 
 ```sh
 brew install --cask josi19/tap/sugarglider
+xattr -dr com.apple.quarantine /Applications/Sugarglider.app
 ```
 
-The same quarantine caveat applies, so either clear the flag afterwards or skip
-it up front with `brew install --cask --no-quarantine josi19/tap/sugarglider`.
+The second line is the same quarantine caveat as above. Homebrew 6 dropped the
+`--no-quarantine` flag, so clearing the attribute afterwards is the way.
 
 ### Build from source
 

@@ -108,7 +108,7 @@ struct MenuBarContentView: View {
                     .strokeBorder(rangeFieldEditing ? Color.accentColor : Color(nsColor: .separatorColor),
                                   lineWidth: rangeFieldEditing ? 1.5 : 1)
                 if rangeFieldEditing {
-                    TextField("Chart range", value: hoursBinding, format: .number)
+                    TextField("Chart range", value: hoursBinding, format: AppSettings.wholeNumberFormat)
                         .textFieldStyle(.plain)
                         .labelsHidden()
                         .multilineTextAlignment(.trailing)

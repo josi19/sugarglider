@@ -54,7 +54,7 @@ private struct GeneralTab: View {
                 Text("Leave the token empty if your site allows unauthenticated reads.")
                     .foregroundStyle(.secondary)
             }
-            Section("Display") {
+            Section {
                 Picker("Theme", selection: $settings.theme) {
                     Text("Automatic").tag(AppSettings.Theme.system)
                     Text("Light").tag(AppSettings.Theme.light)
@@ -70,15 +70,21 @@ private struct GeneralTab: View {
                     Text("In Dropdown + Menu Bar").tag(AppSettings.DeltaDisplay.menuAndStatusBar)
                 }
                 LabeledContent("Refresh") {
-                    HStack(spacing: 4) {
-                        Text("Every")
-                        TextField("", value: $settings.pollIntervalSeconds, format: .number)
-                            .labelsHidden()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 28)
-                        Text("seconds")
-                    }
+                    // Wide enough for the 3-digit maximum; out-of-range input
+                    // snaps back because the setting clamps on write.
+                    intervalField("Every", value: $settings.pollIntervalSeconds,
+                                  unit: "seconds", limits: AppSettings.pollIntervalLimits)
                 }
+                LabeledContent("Stale warning") {
+                    intervalField("After", value: $settings.staleAfterMinutes,
+                                  unit: "minutes", limits: AppSettings.staleAfterLimits)
+                }
+            } header: {
+                Text("Display")
+            } footer: {
+                Text("A reading with no successor for the stale delay is marked with ⚠ and its "
+                     + "age in the menu bar.")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -86,6 +92,22 @@ private struct GeneralTab: View {
         // Restarting the task on every URL/token edit cancels the previous
         // probe, so only the latest values ever report a result.
         .task(id: settings.baseURL + "\n" + settings.token) { await checkConnection() }
+    }
+
+    /// A "<prefix> [n] <unit>" row, as used by the refresh interval and the stale
+    /// delay. The tooltip carries the accepted range; typing outside it snaps
+    /// back, since both settings clamp on write.
+    private func intervalField(_ prefix: String, value: Binding<Int>,
+                               unit: String, limits: ClosedRange<Int>) -> some View {
+        HStack(spacing: 4) {
+            Text(prefix)
+            TextField("", value: value, format: AppSettings.wholeNumberFormat)
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 36)
+            Text(unit)
+                .help("\(limits.lowerBound)–\(limits.upperBound) \(unit)")
+        }
     }
 
     @ViewBuilder private var statusView: some View {
@@ -215,8 +237,8 @@ private struct ColorsTab: View {
                     .disabled(!settings.lineShadingEnabled || settings.lineShadingUsesLineColor)
             }
             Section("Latest reading dot") {
-                sizeRow("Dot size", value: $settings.dotRadius, range: 0...12)
-                sizeRow("Halo size", value: $settings.dotHaloRadius, range: 0...24)
+                sizeRow("Dot size", value: $settings.dotRadius, range: AppSettings.dotRadiusLimits)
+                sizeRow("Halo size", value: $settings.dotHaloRadius, range: AppSettings.dotHaloRadiusLimits)
                 Toggle("Match zone color", isOn: $settings.dotUsesZoneColor)
                 ColorPicker("Dot color", selection: $settings.dotColor)
                     .disabled(settings.dotUsesZoneColor)
@@ -351,6 +373,19 @@ private struct GlucoseTab: View {
                 thresholdField("Very low", \.extremeLow)
                 thresholdField("Very high", \.extremeHigh)
             }
+            // Shown rather than enforced: the fields persist as you type, so
+            // clamping them against each other would fight anyone moving a
+            // range around. See `AppSettings.thresholdOrderWarning`.
+            if let warning = settings.thresholdOrderWarning {
+                Section {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                } footer: {
+                    Text("Until these are in order — very low ≤ low < high ≤ very high — the chart "
+                         + "can't color the zones or draw the optimal range.")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
     }
@@ -361,7 +396,7 @@ private struct GlucoseTab: View {
     private func thresholdField(_ label: String, _ keyPath: ReferenceWritableKeyPath<AppSettings, Double>) -> some View {
         LabeledContent(label) {
             HStack(spacing: 4) {
-                TextField(label, value: displayValue(keyPath), format: thresholdFormat)
+                TextField(label, value: displayValue(keyPath), format: settings.thresholdFormat)
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 64)
@@ -376,10 +411,5 @@ private struct GlucoseTab: View {
             get: { settings.units.display(settings[keyPath: keyPath]) },
             set: { settings[keyPath: keyPath] = settings.units.toMgdl($0) }
         )
-    }
-
-    /// mmol/L shows one decimal; mg/dL is integral.
-    private var thresholdFormat: FloatingPointFormatStyle<Double> {
-        .number.precision(.fractionLength(0...(settings.units == .mmol ? 1 : 0)))
     }
 }

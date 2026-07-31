@@ -22,8 +22,13 @@ Nightscout site.
 
 - **Glance value in the menu bar** — current glucose with trend arrow, updated
   on a configurable interval (3–300s, default 60s). Optionally shows the delta
-  to the previous reading (`5.6 ↗ (+0.1)`). A `⚠` appears when the newest
-  reading is older than ~11 minutes (two missed sensor cycles).
+  to the previous reading (`5.6 ↗ (+0.1)`). Once the newest reading is older
+  than the stale delay — 11 minutes by default, adjustable from 5 to 240 minutes
+  to suit how often your CGM and uploader actually deliver — it is marked with its age —
+  `5.6 ↗ ⚠ 23m` — so a brief gap is easy to tell apart from a feed that
+  stopped. Sugarglider never sends notifications and is not an alarm: it can
+  only see your Nightscout site, so it cannot tell a sensor gap from an
+  uploader or network one.
 - **Chart dropdown** — click the item for a smoothed chart of the last
   2–72 hours (up to 3 days), adjustable with a slider in 2h steps or by typing
   any whole number of hours into the field beside it (remembered across
@@ -33,8 +38,10 @@ Nightscout site.
   instead of interpolating across them.
 - **Zone colors** — the line is colored by zone (very low / below / in range /
   above / very high), either switching at each threshold or blending smoothly.
-  Every color is independently pickable with opacity, palettes can be saved as
-  named presets, and the monochrome defaults follow Light/Dark mode.
+  Every color is independently pickable with opacity, and the monochrome
+  defaults follow Light/Dark mode. A whole look — all colors plus the blending,
+  shading and dot options below — can be saved as a named preset and switched
+  back to at any time.
 - **Tunable chart details** — the shading under the line can be switched off or
   given its own color, the dot on the latest reading has adjustable size and
   halo (either down to zero to hide it) and can keep its zone color or take a
@@ -43,7 +50,10 @@ Nightscout site.
 - **mmol/L or mg/dL** — switch the display unit any time; values are stored in
   mg/dL (Nightscout's native unit), so nothing drifts on conversion.
 - **Configurable thresholds** — target range and very-low/very-high bounds,
-  edited in your display unit.
+  edited in your display unit. Numbers always use a dot as the decimal
+  separator, whatever your region is set to. Settings points out thresholds that
+  are out of order (very low ≤ low < high ≤ very high) rather than quietly
+  rewriting what you typed.
 - **Light/Dark override** — follow the system or force a theme, applied to the
   dropdown and Settings window.
 - **Native and lightweight** — pure Swift + SwiftUI, zero dependencies, a

@@ -15,34 +15,39 @@ final class ReadingStore {
     var previousReading: Reading?
     var lastError: String?
     var readings: [Reading] = []      // history for the chart
-    private var historyFetchedAt: Date?
-    private(set) var timer: Timer?
 
+    // Bookkeeping, not display state: nothing observes it, so it's kept out of
+    // Observation's change tracking.
+    @ObservationIgnored private var historyFetchedAt: Date?
+    @ObservationIgnored private(set) var timer: Timer?
     /// Bumped by `reconnect()`. In-flight fetches capture the value at launch
     /// and discard their response if it changed — otherwise a slow response
     /// from the *previous* Nightscout site could land after a URL change and
     /// repopulate the store with the wrong site's data.
-    private var generation = 0
-    private var reconnectDebounce: Task<Void, Never>?
-    private var coverageDebounce: Task<Void, Never>?
+    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var reconnectDebounce: Task<Void, Never>?
+    @ObservationIgnored private var coverageDebounce: Task<Void, Never>?
     /// Start of the window the last full history fetch asked for — what the
     /// cache is built to cover. See `coversHistory(from:)`.
-    private(set) var historyWindowStart: Date?
-
-    /// Readings arrive every ~5 min; flag as stale after two missed cycles.
-    static let staleThreshold: TimeInterval = 11 * 60
+    @ObservationIgnored private(set) var historyWindowStart: Date?
 
     /// How far apart two readings may be and still count as one continuous
     /// history — the same threshold the chart uses to break a line on a dropout.
-    static let contiguityThreshold: TimeInterval = 15 * 60
+    static let contiguityThreshold = ChartMath.dropoutThreshold
     private var pollInterval: TimeInterval { TimeInterval(settings.pollIntervalSeconds) }
 
     init(settings: AppSettings) {
         self.settings = settings
     }
 
-    /// Starts polling. Called once from the app's launch path.
+    /// Subscribes to the settings changes this store has to react to, then starts
+    /// polling. Called once from the app's launch path — the wiring lives here
+    /// rather than at the call site so the store owns which of its own methods
+    /// each change drives.
     func start() {
+        settings.onConnectionChanged = { [weak self] in self?.reconnect() }
+        settings.onPollIntervalChanged = { [weak self] in self?.restartTimer() }
+        settings.onRangeHoursChanged = { [weak self] in self?.ensureHistoryCoverage() }
         if settings.isConfigured { refresh() }
         startTimer()
     }
@@ -219,9 +224,22 @@ final class ReadingStore {
         return units == .mmol ? String(format: "%+.1f", d) : String(format: "%+.0f", d)
     }
 
+    /// Whether the newest reading has gone without a successor for longer than
+    /// the user's `staleAfterMinutes`.
     var isStale: Bool {
         guard let r = lastReading else { return false }
-        return Date().timeIntervalSince(r.date) > Self.staleThreshold
+        return Date().timeIntervalSince(r.date) > settings.staleThreshold
+    }
+
+    /// Age in the shortest form that still reads unambiguously — "13m", "2h",
+    /// "3d" — for the status-bar item, where a full "13 min ago" would crowd out
+    /// the menu bar. Only shown once a reading is stale, so the small end never
+    /// appears; rounds down, i.e. it never claims more time has passed than has.
+    static func compactAge(_ date: Date) -> String {
+        let secs = max(0, Int(Date().timeIntervalSince(date)))
+        if secs < 3600 { return "\(secs / 60)m" }
+        if secs < 86_400 { return "\(secs / 3600)h" }
+        return "\(secs / 86_400)d"
     }
 
     /// Compact relative time, e.g. "just now", "3 min ago", "2 h ago".

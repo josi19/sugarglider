@@ -38,18 +38,33 @@ struct MenuBarContentView: View {
             Divider().frame(width: contentWidth)
 
             HStack(spacing: 8) {
-                Button("Refresh") { store.refresh(); store.refreshHistory(force: true) }
-                    .keyboardShortcut("r")
-                Button("Settings…") { showSettings() }
-                    .keyboardShortcut(",")
-                Button("Quit") { NSApp.terminate(nil) }
-                    .keyboardShortcut("q")
+                iconButton("arrow.clockwise", label: "Refresh", shortcut: "r") {
+                    store.refresh()
+                    store.refreshHistory(force: true)
+                }
+                iconButton("gearshape", label: "Settings…", shortcut: ",") { showSettings() }
+                Spacer()
+                iconButton("power", label: "Quit", shortcut: "q") { NSApp.terminate(nil) }
             }
             .controlSize(.small)
+            .frame(width: contentWidth)
         }
         .padding(18)
         .onAppear { store.refreshHistory(force: false) }
         .windowTheme(settings.theme)
+    }
+
+    /// An action button shown as a symbol only — so the label survives just as
+    /// the tooltip and the accessibility name.
+    private func iconButton(_ symbol: String, label: String, shortcut: KeyEquivalent,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 16, height: 16)
+        }
+        .keyboardShortcut(shortcut)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     private var rangeBinding: Binding<Double> {

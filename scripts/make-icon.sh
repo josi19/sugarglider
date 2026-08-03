@@ -18,11 +18,61 @@
 # documents), while build.sh is meant to work on a Command Line Tools-only
 # machine, and CI's pinned macos-15 runners have neither. Committing what actool
 # produced keeps every build reproducible without that dependency.
+#
+# Usage:
+#   make-icon.sh [compile]   recompile the artifacts and record the source hash
+#   make-icon.sh verify      check that hash without needing Xcode at all
+#
+# `verify` is what closes the loop on committing generated files: edit the
+# artwork, forget to recompile, and the build would otherwise pick up the stale
+# artifacts and ship the wrong icon with everything green. CI runs it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ICON="Resources/AppIcon.icon"
+CHECKSUM_FILE="Resources/AppIcon.icon.sha256"
+MODE="${1:-compile}"
+
 [[ -d "${ICON}" ]] || { echo "error: ${ICON} not found" >&2; exit 1; }
+
+# Hashes every file in the document, contents and paths both, so a renamed or
+# swapped asset registers as well as an edited one. LC_ALL pins the sort order,
+# and .DS_Store is skipped: Finder drops one into the package as soon as it's
+# opened, it's gitignored, and including it would make the same source hash
+# differently on a laptop than in CI.
+icon_checksum() {
+    find "${ICON}" -type f ! -name .DS_Store -print0 \
+        | LC_ALL=C sort -z \
+        | xargs -0 shasum -a 256 \
+        | shasum -a 256 \
+        | cut -d' ' -f1
+}
+
+case "${MODE}" in
+    compile) ;;
+    verify)
+        [[ -f "${CHECKSUM_FILE}" ]] || {
+            echo "error: ${CHECKSUM_FILE} is missing — run ./scripts/make-icon.sh" >&2
+            exit 1
+        }
+        recorded="$(cat "${CHECKSUM_FILE}")"
+        actual="$(icon_checksum)"
+        [[ "${recorded}" == "${actual}" ]] || {
+            echo "error: the committed icon artifacts are stale." >&2
+            echo "       ${ICON} hashes to ${actual}," >&2
+            echo "       but ${CHECKSUM_FILE} records ${recorded}." >&2
+            echo "       Run ./scripts/make-icon.sh on a machine with Xcode 26+" >&2
+            echo "       and commit what it regenerates." >&2
+            exit 1
+        }
+        echo "Icon artifacts match ${ICON} (${actual})"
+        exit 0
+        ;;
+    *)
+        echo "usage: $0 [compile|verify]" >&2
+        exit 2
+        ;;
+esac
 
 # xcrun resolves actool only when a full Xcode is *selected*; having it merely
 # installed (the common case — `xcode-select -p` still points at the CLT) is
@@ -110,9 +160,14 @@ for pass in light dark; do
     cp "${TMP}/${pass}.iconset/icon_128x128@2x.png" "Resources/AppIcon-${variant}.png"
 done
 
+# Last, so a run that died halfway leaves the recorded hash pointing at the
+# source the *committed* artifacts were actually built from.
+icon_checksum > "${CHECKSUM_FILE}"
+
 for artifact in Assets.car AppIcon.icns AppIcon-Light.png AppIcon-Dark.png; do
     echo "    Resources/${artifact} ($(du -h "Resources/${artifact}" | cut -f1))"
 done
+echo "    ${CHECKSUM_FILE} ($(cat "${CHECKSUM_FILE}"))"
 
 echo
 echo "Info.plist keys build.sh writes for these (kept in sync by hand):"

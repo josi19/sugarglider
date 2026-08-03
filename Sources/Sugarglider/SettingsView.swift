@@ -16,7 +16,7 @@ struct SettingsView: View {
                 .tabItem { Label("Colors", systemImage: "paintpalette") }
             GlucoseTab(settings: settings)
                 .tabItem { Label("Glucose", systemImage: "drop") }
-            AboutTab()
+            AboutTab(settings: settings)
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 500, height: 480)
@@ -422,11 +422,17 @@ private struct GlucoseTab: View {
 /// menu** — the usual "About Sugarglider" item simply isn't reachable, so the
 /// Settings window is the only place this can live.
 private struct AboutTab: View {
+    var settings: AppSettings
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Form {
             Section {
                 HStack(spacing: 14) {
-                    if let icon = NSImage(named: NSImage.applicationIconName) {
+                    // `settings.theme` first, environment second: an explicit
+                    // Light/Dark override must win here even though the window
+                    // it applies to is the one this view is drawn in.
+                    if let icon = AppInfo.appIcon(for: settings.theme.colorScheme ?? colorScheme) {
                         Image(nsImage: icon)
                             .resizable()
                             .frame(width: 64, height: 64)
@@ -479,6 +485,18 @@ enum AppInfo {
     static let repositoryURL = URL(string: "https://github.com/josi19/sugarglider")!
     static let issuesURL = repositoryURL.appending(path: "issues")
     static let licenseURL = repositoryURL.appending(path: "blob/main/LICENSE")
+
+    /// The app artwork for a given appearance. macOS renders the *bundle* icon
+    /// from `Assets.car`, which does carry a light and a dark variant, but that
+    /// stack is reachable only through the system icon services: asked by name,
+    /// AppKit hands out the light rendition whatever appearance is in effect
+    /// (probed both ways round). Hence the same two artworks as plain PNGs,
+    /// picked here. Falls back to the bundle icon for a bare `swift build`
+    /// binary, which has no Resources at all.
+    static func appIcon(for scheme: ColorScheme) -> NSImage? {
+        NSImage(named: scheme == .dark ? "AppIcon-Dark" : "AppIcon-Light")
+            ?? NSImage(named: NSImage.applicationIconName)
+    }
 
     /// "Version 0.2.0 (73)" from the bundle. A bare `swift build` binary has no
     /// Info.plist at all, so the version keys are missing there rather than

@@ -121,7 +121,8 @@ The menu-bar item shows `CGM ⚙` until configured. Click it, then
 
 Settings apply immediately — there is no Save button — and the General tab
 shows a live **Connected** / failure status for the URL and token as you type.
-The Colors and Glucose tabs hold the palette and threshold options.
+The Colors and Glucose tabs hold the palette and threshold options; About shows
+the running version, which is what to quote when reporting a problem.
 
 ## Trend arrows
 

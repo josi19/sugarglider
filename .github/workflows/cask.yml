@@ -1,0 +1,120 @@
+name: Homebrew cask
+
+# Publishes the cask for an already-released version to the tap.
+#
+# Two triggers, one definition: `release.yml` calls it as the last step of a
+# release, and it can be run by hand for a version whose release exists but
+# whose cask didn't make it — without re-releasing anything. That manual path is
+# also the only way to actually *test* this job, since a release is otherwise
+# needed to reach it.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to publish, without the leading v"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (blank = the latest release)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# The tap is a single file; two concurrent updates would just fight each other.
+concurrency:
+  group: homebrew-cask
+  cancel-in-progress: false
+
+jobs:
+  cask:
+    name: Push cask to tap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version and checksum
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          # `--repo` throughout: `gh release` otherwise infers the repository
+          # from the checkout's git remote, which makes this step depend on the
+          # working directory rather than on its inputs.
+          version="${INPUT_VERSION}"
+          if [[ -z "${version}" ]]; then
+            version="$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq '.tagName')"
+            version="${version#v}"
+            echo "No version given — using the latest release: ${version}"
+          fi
+
+          # The checksum comes from the release's own checksums.txt rather than
+          # being passed in from the build: whatever is published is what the
+          # cask must describe, and it keeps this workflow independent of the
+          # job that built it.
+          gh release download "v${version}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern checksums.txt --dir "${RUNNER_TEMP}"
+          zip="Sugarglider-${version}.zip"
+          sha256="$(awk -v f="${zip}" '$2 == f { print $1 }' "${RUNNER_TEMP}/checksums.txt")"
+          if [[ -z "${sha256}" ]]; then
+            echo "::error::No entry for ${zip} in the checksums.txt of release v${version}."
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${sha256}"   >> "$GITHUB_OUTPUT"
+          echo "Cask for ${version} (zip sha256 ${sha256})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push cask to tap
+        env:
+          # Fine-grained PAT with contents:write on the tap repo. Unset = skip.
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          SHA256: ${{ steps.resolve.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN not set — skipping the cask update."
+            exit 0
+          fi
+          TAP_REPO="${TAP_REPO:-${GITHUB_REPOSITORY_OWNER}/homebrew-tap}"
+
+          gh repo clone "${TAP_REPO}" tap -- --depth=1
+          mkdir -p tap/Casks
+          sed -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__SHA256__|${SHA256}|g" \
+              -e "s|__REPO__|${GITHUB_REPOSITORY}|g" \
+              .github/homebrew/sugarglider.rb.tmpl > tap/Casks/sugarglider.rb
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Stage first, then compare against the index: a plain `git diff` only
+          # looks at tracked files, so a run where the cask is a new untracked
+          # file would read as "nothing changed".
+          git add Casks/sugarglider.rb
+          if git diff --cached --quiet; then
+            echo "Cask already at ${VERSION}."
+            exit 0
+          fi
+          git commit -m "sugarglider ${VERSION}"
+
+          # `GH_TOKEN` is the gh CLI's credential, not git's. `gh repo clone`
+          # authenticates the clone itself, but the remote URL it leaves behind
+          # carries nothing, so `git push` finds no credentials and — with no TTY
+          # to prompt on — dies with "could not read Username for github.com".
+          # Putting the token in the push URL is what makes the push work.
+          git remote set-url origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git"
+          # -u origin HEAD rather than a bare push: a tap repo created without an
+          # initial commit clones to an unborn branch with no upstream.
+          if ! git push -u origin HEAD; then
+            echo "::error::Push to ${TAP_REPO} failed. HOMEBREW_TAP_TOKEN needs contents:write on that repository."
+            exit 1
+          fi

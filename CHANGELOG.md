@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 from [Conventional Commits](https://www.conventionalcommits.org/) by
 `scripts/changelog.sh` — edit commit messages, not this file.
 
+## [0.3.0](https://github.com/josi19/sugarglider/releases/tag/v0.3.0) — 2026-08-03
+
+### Features
+
+- **icon:** ship the new artwork with a light and a dark variant ([`f067ef5`](https://github.com/josi19/sugarglider/commit/f067ef5eddc48dc0b7e633b1e315cdd619a254ee))
+- **settings:** add an About tab with version, links and license ([`45f0020`](https://github.com/josi19/sugarglider/commit/45f0020dfa949c99da3b61a0df5725d3f63b0fe5))
+
+### Bug fixes
+
+- **ci:** authenticate the cask push and make it runnable on its own ([`60325d7`](https://github.com/josi19/sugarglider/commit/60325d7044281c7571d81ab56e5a8bd1de226a11))
+
+### Documentation
+
+- changelog for v0.2.0 [skip ci] ([`e5f35bf`](https://github.com/josi19/sugarglider/commit/e5f35bfa7264ddf34e3f7954c67add68f39f29db))
+
+### Build & CI
+
+- fail when the committed icon artifacts go stale ([`36fc2ca`](https://github.com/josi19/sugarglider/commit/36fc2ca8aad7d8668c8890b6e03a2575e7dc3d99))
+
+### Chores
+
+- **scripts:** match the repo's case and continuation indentation ([`b8d5cf8`](https://github.com/josi19/sugarglider/commit/b8d5cf8fb517643088b3dda145086200eed7429c))
+
+**Full changelog**: https://github.com/josi19/sugarglider/compare/v0.2.0...v0.3.0
+
 ## [0.2.0](https://github.com/josi19/sugarglider/releases/tag/v0.2.0) — 2026-07-31
 
 ### Features

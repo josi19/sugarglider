@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Settings, presented via SwiftUI's native `Settings` scene (⌘,): a real,
 /// non-modal window — edits apply live to `AppSettings`, no Save/Cancel.
@@ -15,6 +16,8 @@ struct SettingsView: View {
                 .tabItem { Label("Colors", systemImage: "paintpalette") }
             GlucoseTab(settings: settings)
                 .tabItem { Label("Glucose", systemImage: "drop") }
+            AboutTab()
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 500, height: 480)
         // NOT `.windowTheme(_:)` here: SwiftUI actively manages the Settings
@@ -411,5 +414,91 @@ private struct GlucoseTab: View {
             get: { settings.units.display(settings[keyPath: keyPath]) },
             set: { settings[keyPath: keyPath] = settings.units.toMgdl($0) }
         )
+    }
+}
+
+/// Which version is running, where to report a problem, and the one caveat
+/// that matters. This tab exists because an `LSUIElement` app has **no app
+/// menu** — the usual "About Sugarglider" item simply isn't reachable, so the
+/// Settings window is the only place this can live.
+private struct AboutTab: View {
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 14) {
+                    if let icon = NSImage(named: NSImage.applicationIconName) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 64, height: 64)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Sugarglider").font(.title2.weight(.semibold))
+                        Text(AppInfo.versionText)
+                            .foregroundStyle(.secondary)
+                            // The one string here anyone is ever asked to
+                            // repeat back, so let them copy it.
+                            .textSelection(.enabled)
+                        Text(AppInfo.copyright)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            }
+            Section {
+                LabeledContent("Project") {
+                    Link(AppInfo.repositoryLabel, destination: AppInfo.repositoryURL)
+                }
+                LabeledContent("Report an issue") {
+                    Link("GitHub Issues", destination: AppInfo.issuesURL)
+                }
+                LabeledContent("License") {
+                    Link("MIT", destination: AppInfo.licenseURL)
+                }
+            }
+            Section {
+                Label {
+                    Text("Sugarglider only displays what your Nightscout site reports. It is not a "
+                         + "medical device and raises no alarms — don't rely on it to catch a high, "
+                         + "a low, or a stopped feed, and don't use it for treatment decisions.")
+                } icon: {
+                    Image(systemName: "info.circle")
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Bundle metadata for the About tab, kept in one place so what Settings shows
+/// can only come from the Info.plist `build.sh` writes.
+enum AppInfo {
+    static let repositoryLabel = "josi19/sugarglider"
+    static let repositoryURL = URL(string: "https://github.com/josi19/sugarglider")!
+    static let issuesURL = repositoryURL.appending(path: "issues")
+    static let licenseURL = repositoryURL.appending(path: "blob/main/LICENSE")
+
+    /// "Version 0.2.0 (73)" from the bundle. A bare `swift build` binary has no
+    /// Info.plist at all, so the version keys are missing there rather than
+    /// wrong — say so instead of printing a fake number.
+    static var versionText: String {
+        versionText(short: bundleString("CFBundleShortVersionString"),
+                    build: bundleString("CFBundleVersion"))
+    }
+
+    static func versionText(short: String?, build: String?) -> String {
+        guard let short, !short.isEmpty else { return "Development build" }
+        guard let build, !build.isEmpty else { return "Version \(short)" }
+        return "Version \(short) (\(build))"
+    }
+
+    static var copyright: String {
+        bundleString("NSHumanReadableCopyright") ?? "© 2026 nevermind.dev"
+    }
+
+    private static func bundleString(_ key: String) -> String? {
+        Bundle.main.object(forInfoDictionaryKey: key) as? String
     }
 }

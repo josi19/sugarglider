@@ -78,3 +78,24 @@ extension SugargliderTests {
         #expect(abs(AppSettings.Units.mmol.toMgdl(10) - 180) < 1e-9)
     }
 }
+
+// MARK: - AppInfo
+
+extension SugargliderTests {
+    /// The About tab must never invent a version: a missing (or blank) key means
+    /// the binary was built without `build.sh`'s Info.plist, which is exactly
+    /// what the test suite itself runs as.
+    @Test func versionTextFallsBackWhenBundleKeysAreMissing() {
+        #expect(AppInfo.versionText(short: "0.2.0", build: "73") == "Version 0.2.0 (73)")
+        #expect(AppInfo.versionText(short: "0.2.0", build: nil) == "Version 0.2.0")
+        #expect(AppInfo.versionText(short: "0.2.0", build: "") == "Version 0.2.0")
+        #expect(AppInfo.versionText(short: nil, build: "73") == "Development build")
+        #expect(AppInfo.versionText(short: "", build: "73") == "Development build")
+    }
+
+    @Test func repositoryLinksPointAtTheProject() {
+        #expect(AppInfo.issuesURL.absoluteString == "https://github.com/josi19/sugarglider/issues")
+        #expect(AppInfo.licenseURL.absoluteString
+                == "https://github.com/josi19/sugarglider/blob/main/LICENSE")
+    }
+}

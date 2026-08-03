@@ -28,6 +28,13 @@ jobs:
           swift --version
           xcodebuild -version
 
+      # The icon artifacts are generated but committed, because compiling them
+      # needs a full Xcode 26+ that this runner doesn't have. This is the guard
+      # against the artwork being edited without a recompile: the check itself
+      # is just a hash, no Xcode involved.
+      - name: Check icon artifacts are current
+        run: ./scripts/make-icon.sh verify
+
       - name: Build (debug)
         run: swift build
 

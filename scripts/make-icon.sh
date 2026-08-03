@@ -49,29 +49,29 @@ icon_checksum() {
 }
 
 case "${MODE}" in
-    compile) ;;
-    verify)
-        [[ -f "${CHECKSUM_FILE}" ]] || {
-            echo "error: ${CHECKSUM_FILE} is missing — run ./scripts/make-icon.sh" >&2
-            exit 1
-        }
-        recorded="$(cat "${CHECKSUM_FILE}")"
-        actual="$(icon_checksum)"
-        [[ "${recorded}" == "${actual}" ]] || {
-            echo "error: the committed icon artifacts are stale." >&2
-            echo "       ${ICON} hashes to ${actual}," >&2
-            echo "       but ${CHECKSUM_FILE} records ${recorded}." >&2
-            echo "       Run ./scripts/make-icon.sh on a machine with Xcode 26+" >&2
-            echo "       and commit what it regenerates." >&2
-            exit 1
-        }
-        echo "Icon artifacts match ${ICON} (${actual})"
-        exit 0
-        ;;
-    *)
-        echo "usage: $0 [compile|verify]" >&2
-        exit 2
-        ;;
+compile) ;;
+verify)
+    [[ -f "${CHECKSUM_FILE}" ]] || {
+        echo "error: ${CHECKSUM_FILE} is missing — run ./scripts/make-icon.sh" >&2
+        exit 1
+    }
+    recorded="$(cat "${CHECKSUM_FILE}")"
+    actual="$(icon_checksum)"
+    [[ "${recorded}" == "${actual}" ]] || {
+        echo "error: the committed icon artifacts are stale." >&2
+        echo "       ${ICON} hashes to ${actual}," >&2
+        echo "       but ${CHECKSUM_FILE} records ${recorded}." >&2
+        echo "       Run ./scripts/make-icon.sh on a machine with Xcode 26+" >&2
+        echo "       and commit what it regenerates." >&2
+        exit 1
+    }
+    echo "Icon artifacts match ${ICON} (${actual})"
+    exit 0
+    ;;
+*)
+    echo "usage: $0 [compile|verify]" >&2
+    exit 2
+    ;;
 esac
 
 # xcrun resolves actool only when a full Xcode is *selected*; having it merely

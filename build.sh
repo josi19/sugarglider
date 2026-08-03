@@ -50,7 +50,15 @@ echo "==> Assembling ${APP}"
 rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${BIN_PATH}" "${APP}/Contents/MacOS/${BIN}"
-cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
+# Three icon artifacts, three distinct consumers — see scripts/make-icon.sh:
+# Assets.car holds the appearance-aware image stack macOS renders the app icon
+# from, AppIcon.icns is the single-appearance fallback, and the two PNGs exist
+# because the catalog's variants are reachable only through the system icon
+# services — `NSImage(named:)` hands out the light rendition whatever the
+# current appearance is (probed), so the About tab picks its artwork by hand.
+cp "Resources/Assets.car" "Resources/AppIcon.icns" \
+   "Resources/AppIcon-Light.png" "Resources/AppIcon-Dark.png" \
+   "${APP}/Contents/Resources/"
 
 echo "==> Stripping symbols"
 strip -x "${APP}/Contents/MacOS/${BIN}"
@@ -64,6 +72,8 @@ cat > "${APP}/Contents/Info.plist" <<PLIST
     <string>${BIN}</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon.icns</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>${BUNDLE_ID}</string>
     <key>CFBundleName</key>

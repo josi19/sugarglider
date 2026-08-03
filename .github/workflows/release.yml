@@ -31,7 +31,6 @@ jobs:
     runs-on: macos-15
     outputs:
       version: ${{ steps.version.outputs.version }}
-      zip_sha256: ${{ steps.checksums.outputs.zip_sha256 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -172,8 +171,10 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: scripts/notarize.sh "dist/Sugarglider-${VERSION}.dmg" --staple
 
+      # Published as a release asset, and the cask workflow reads the zip's hash
+      # back out of it rather than having it handed over — what's published is
+      # what the cask has to describe.
       - name: Checksums
-        id: checksums
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -181,7 +182,6 @@ jobs:
           cd dist
           shasum -a 256 "Sugarglider-${VERSION}.zip" "Sugarglider-${VERSION}.dmg" > checksums.txt
           cat checksums.txt
-          echo "zip_sha256=$(shasum -a 256 "Sugarglider-${VERSION}.zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         env:
@@ -250,48 +250,13 @@ jobs:
           git push origin "${DEFAULT_BRANCH}" || \
             echo "::warning::Could not push CHANGELOG.md to ${DEFAULT_BRANCH} (branch protection?). Run 'scripts/changelog.sh prepend ${VERSION}' locally and commit it."
 
+  # Same definition the manual "Homebrew cask" run uses, so the path that ships a
+  # cask during a release is the path that can be exercised on its own.
   homebrew:
     name: Update Homebrew cask
     needs: release
     if: ${{ !inputs.dry_run }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Push cask to tap
-        env:
-          # Fine-grained PAT with contents:write on the tap repo. Unset = skip.
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
-          VERSION: ${{ needs.release.outputs.version }}
-          SHA256: ${{ needs.release.outputs.zip_sha256 }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${GH_TOKEN}" ]]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN not set — skipping the cask update."
-            exit 0
-          fi
-          TAP_REPO="${TAP_REPO:-${GITHUB_REPOSITORY_OWNER}/homebrew-tap}"
-
-          gh repo clone "${TAP_REPO}" tap -- --depth=1
-          mkdir -p tap/Casks
-          sed -e "s|__VERSION__|${VERSION}|g" \
-              -e "s|__SHA256__|${SHA256}|g" \
-              -e "s|__REPO__|${GITHUB_REPOSITORY}|g" \
-              .github/homebrew/sugarglider.rb.tmpl > tap/Casks/sugarglider.rb
-
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Stage first, then compare against the index: a plain `git diff` only
-          # looks at tracked files, so the very first release — where the cask is
-          # a new untracked file — would read as "nothing changed".
-          git add Casks/sugarglider.rb
-          if git diff --cached --quiet; then
-            echo "Cask already at ${VERSION}."
-            exit 0
-          fi
-          git commit -m "sugarglider ${VERSION}"
-          # -u origin HEAD rather than a bare push: a tap repo created without an
-          # initial commit clones to an unborn branch with no upstream.
-          git push -u origin HEAD
+    uses: ./.github/workflows/cask.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit

@@ -57,8 +57,8 @@ cp "${BIN_PATH}" "${APP}/Contents/MacOS/${BIN}"
 # services — `NSImage(named:)` hands out the light rendition whatever the
 # current appearance is (probed), so the About tab picks its artwork by hand.
 cp "Resources/Assets.car" "Resources/AppIcon.icns" \
-   "Resources/AppIcon-Light.png" "Resources/AppIcon-Dark.png" \
-   "${APP}/Contents/Resources/"
+    "Resources/AppIcon-Light.png" "Resources/AppIcon-Dark.png" \
+    "${APP}/Contents/Resources/"
 
 echo "==> Stripping symbols"
 strip -x "${APP}/Contents/MacOS/${BIN}"

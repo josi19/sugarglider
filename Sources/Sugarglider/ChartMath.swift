@@ -87,9 +87,16 @@ enum ChartMath {
     /// where the user has set their ranges. Oldest-first, 5-minute spacing,
     /// ending at `end` — shaped like a real trace: in range, a dip to very low,
     /// recovery, a spike to very high, then settling back in range.
+    ///
+    /// `cycles` repeats that shape (it begins and ends in range with zero slope,
+    /// so the repeats join smoothly). The preview scales it with its window
+    /// instead of stretching one sweep across it: a stretched curve looks
+    /// *identical* at every window width — only the axis labels change — which
+    /// makes the range slider look broken.
     static func sampleReadings(extremeLow: Double, targetLow: Double,
                                targetHigh: Double, extremeHigh: Double,
-                               endingAt end: Date, count: Int = 35) -> [Reading] {
+                               endingAt end: Date, count: Int = 35,
+                               cycles: Double = 1) -> [Reading] {
         let mid = (targetLow + targetHigh) / 2
         let below = (extremeLow + targetLow) / 2
         let veryLow = max(40, extremeLow - (targetLow - extremeLow) / 2)
@@ -110,8 +117,12 @@ enum ChartMath {
             return v0 + (v1 - v0) * eased
         }
         let interval: TimeInterval = 5 * 60
+        let cycles = max(cycles, 1)
         return (0..<count).map { i in
-            Reading(sgv: Int(value(at: Double(i) / Double(count - 1)).rounded()),
+            // Position within the current repeat of the shape; the last point of
+            // a whole cycle lands on 0, which is the same value as 1 (in range).
+            let progress = Double(i) / Double(count - 1) * cycles
+            return Reading(sgv: Int(value(at: progress.truncatingRemainder(dividingBy: 1)).rounded()),
                     direction: "",
                     date: end.addingTimeInterval(-Double(count - 1 - i) * interval))
         }

@@ -170,7 +170,22 @@ private struct ColorsTab: View {
     @Bindable var settings: AppSettings
     @State private var showingSavePreset = false
     @State private var newPresetName = ""
-    @State private var previewSliderValue = 0.6
+    /// The preview's own chart window, in hours — driven by the `TintedSlider`
+    /// below the preview, which exists so the slider color is visible at all.
+    /// It's the sample chart's range, deliberately *not* `settings.rangeHours`:
+    /// everything inside the preview box is a demo, and editing the dropdown's
+    /// window from the Colors tab would be a surprise. Its bounds and step are
+    /// the real slider's, so what's demoed is the actual control. It starts at
+    /// `rangeHours`' own default rather than mirroring the current setting: on
+    /// the 2h step grid an odd hour count wouldn't survive the first drag, and a
+    /// slider that opens on the real value invites exactly the "why didn't my
+    /// chart change?" reading this is meant to avoid.
+    @State private var previewHours = 6.0
+    /// The sample curve's end, and the chart's window end with it (see
+    /// `ChartCanvas.windowEnd`) — so the preview stays fully in frame however
+    /// long ago the body last ran. Refreshed on appear only to keep the time
+    /// axis near the current clock; nothing depends on it being current.
+    @State private var sampleEnd = Date()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -181,26 +196,57 @@ private struct ColorsTab: View {
 
     private var preview: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ChartCanvas(readings: sampleReadings, rangeHours: 3, settings: settings)
+            ChartCanvas(readings: sampleReadings, rangeHours: Int(previewHours),
+                        settings: settings, windowEnd: sampleEnd)
                 .frame(height: 120)
-            // Mirrors the dropdown's range slider purely so the slider color is
-            // previewable; it drives local state, not `rangeHours`.
-            TintedSlider(value: $previewSliderValue, range: 0...1, tint: settings.sliderColor,
-                         accessibilityValueText: "preview only")
-                .accessibilityLabel("Range slider color preview")
-                .padding(.top, 2)
+            // The dropdown's range slider, bounds and 2h step included, applied
+            // to the sample curve — so it demonstrates the slider color *and*
+            // does what a slider should when dragged.
+            HStack(spacing: 8) {
+                TintedSlider(value: $previewHours, range: Self.previewHoursBounds, step: 2,
+                             tint: settings.sliderColor,
+                             accessibilityValueText: "\(Int(previewHours)) hours, preview only")
+                    .accessibilityLabel("Preview chart range")
+                Text("\(Int(previewHours)) h")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30, alignment: .trailing)
+            }
+            .padding(.top, 2)
             Text("Preview — sample data, not your readings")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 8, trailing: 20))
+        .onAppear { sampleEnd = Date() }
     }
 
+    private static let previewHoursBounds =
+        Double(AppSettings.rangeHoursLimits.lowerBound)...Double(AppSettings.rangeHoursLimits.upperBound)
+
+    /// Hours per sweep through the zones at the narrow end of the range; the
+    /// window's worth of curve is built from repeats of that shape, so a wider
+    /// window reads as more history rather than as one curve stretched wider.
+    /// The count grows with the *square root* of the window: one sweep per 3 h
+    /// straight up would pack 24 of them into a 72 h window — a comb roughly
+    /// 19 pt per sweep — while this keeps the widest window at about five.
+    private static let previewHoursPerCycle = 3.0
+
+    private var previewCycles: Double {
+        max(1, (previewHours / Self.previewHoursPerCycle).squareRoot())
+    }
+
+    /// The sample curve, sized to fill whatever window the preview slider
+    /// selects. The 5-minute spacing is fixed (a wider one would exceed
+    /// `ChartMath.dropoutThreshold` and shatter the line into isolated points),
+    /// so it's the point count that follows the window — 25 points at 2 h, 865
+    /// at 72 h.
     private var sampleReadings: [Reading] {
         ChartMath.sampleReadings(
             extremeLow: settings.extremeLow, targetLow: settings.targetLow,
             targetHigh: settings.targetHigh, extremeHigh: settings.extremeHigh,
-            endingAt: Date()
+            endingAt: sampleEnd, count: Int(previewHours) * 12 + 1,
+            cycles: previewCycles
         )
     }
 

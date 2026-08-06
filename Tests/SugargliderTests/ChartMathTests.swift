@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 import SwiftUI
 @testable import Sugarglider
@@ -181,6 +182,53 @@ extension SugargliderTests {
         s.dotHaloRadius = 24
         let chart = ChartCanvas(readings: spanningReadings(from: Date()), rangeHours: 6, settings: s)
         #expect(renderedImage(chart) != nil)   // fixed colors + the largest allowed dot
+    }
+
+    /// Raw pixels of an off-screen render, so two chart variants can be
+    /// compared. PNG encoding isn't reproducible, the bitmap is.
+    private func pixels(of view: some View) -> Data? {
+        guard let image = renderedImage(view) else { return nil }
+        let rep = NSBitmapImageRep(cgImage: image)
+        guard let bytes = rep.bitmapData else { return nil }
+        return Data(bytes: bytes, count: rep.bytesPerRow * rep.pixelsHigh)
+    }
+
+    /// The Settings preview's contract: sample data pinned to its own window end
+    /// keeps drawing however long ago it was generated, whereas the same data on
+    /// a wall-clock window ages out into the empty state — which is what the
+    /// live chart wants, and what made the preview go blank.
+    @Test func pinnedWindowEndKeepsStaleSampleDataVisible() {
+        let s = Self.makeSettings()
+        let end = Date().addingTimeInterval(-6 * 3600)   // as if generated 6h ago
+        let samples = ChartMath.sampleReadings(
+            extremeLow: s.extremeLow, targetLow: s.targetLow,
+            targetHigh: s.targetHigh, extremeHigh: s.extremeHigh, endingAt: end)
+
+        let emptyState = pixels(of: ChartCanvas(readings: [], rangeHours: 3, settings: s))
+        let pinned = pixels(of: ChartCanvas(readings: samples, rangeHours: 3, settings: s, windowEnd: end))
+        let wallClock = pixels(of: ChartCanvas(readings: samples, rangeHours: 3, settings: s))
+
+        #expect(emptyState != nil)
+        #expect(pinned != emptyState)      // the curve is drawn
+        #expect(wallClock == emptyState)   // ...and without the pin it wouldn't be
+    }
+
+    /// The Colors tab's preview slider spans the real 2…72 h bounds, and the
+    /// sample curve grows with the window (5-min spacing, so 865 points at the
+    /// top end — plus weekday time labels past 24 h).
+    @Test func rendersWidestPreviewWindow() {
+        let s = Self.makeSettings()
+        let end = Date()
+        let samples = ChartMath.sampleReadings(
+            extremeLow: s.extremeLow, targetLow: s.targetLow,
+            targetHigh: s.targetHigh, extremeHigh: s.extremeHigh,
+            endingAt: end, count: 72 * 12 + 1)
+        #expect(samples.count == 865)
+        #expect(samples.first!.date == end.addingTimeInterval(-72 * 3600))
+
+        let chart = pixels(of: ChartCanvas(readings: samples, rangeHours: 72, settings: s, windowEnd: end))
+        #expect(chart != nil)
+        #expect(chart != pixels(of: ChartCanvas(readings: [], rangeHours: 72, settings: s)))
     }
 
     @Test func rendersWithGapsAndIsolatedPoints() {

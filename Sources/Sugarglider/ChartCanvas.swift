@@ -15,6 +15,15 @@ struct ChartCanvas: View {
     var readings: [Reading]
     var rangeHours: Int
     var settings: AppSettings
+    /// The instant the window ends at. The live chart leaves this nil and
+    /// anchors to the wall clock, which is what makes a stopped feed show up as
+    /// a growing gap at the right edge. Settings' synthetic preview pins it to
+    /// its own sample data's end instead: that data is generated when the view
+    /// body runs, while `Canvas` redraws whenever it likes, so a wall-clock
+    /// window slid the samples out of range as the app kept running — after
+    /// `rangeHours` the preview showed "No data for this range" until some edit
+    /// re-ran the body and regenerated it.
+    var windowEnd: Date?
 
     @State private var hoverIndex: Int?
     /// `.onContinuousHover` doesn't hand us the view's size, so track it via a
@@ -110,7 +119,7 @@ struct ChartCanvas: View {
             height: size.height - topInset - bottomInset
         )
 
-        let now = Date()
+        let now = windowEnd ?? Date()
         let start = now.addingTimeInterval(-Double(rangeHours) * 3600)
         let visible = readings.filter { $0.date >= start }
         guard visible.count >= 2 else { return nil }

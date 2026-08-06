@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 from [Conventional Commits](https://www.conventionalcommits.org/) by
 `scripts/changelog.sh` — edit commit messages, not this file.
 
+## [0.4.0](https://github.com/josi19/sugarglider/releases/tag/v0.4.0) — 2026-08-06
+
+### Features
+
+- **settings:** make the Colors preview slider set the preview's range ([`2f27985`](https://github.com/josi19/sugarglider/commit/2f2798555c27390df1937da7e7f6e8f98add771d))
+
+### Documentation
+
+- changelog for v0.3.0 [skip ci] ([`f2ed165`](https://github.com/josi19/sugarglider/commit/f2ed165bf7b54713c750e9e63f73e813bd0942b8))
+
+**Full changelog**: https://github.com/josi19/sugarglider/compare/v0.3.0...v0.4.0
+
 ## [0.3.0](https://github.com/josi19/sugarglider/releases/tag/v0.3.0) — 2026-08-03
 
 ### Features

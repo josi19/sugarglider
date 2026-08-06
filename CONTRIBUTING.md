@@ -72,6 +72,11 @@ influence the version.
 Pull requests are squash-merged, so it's the **PR title** that ends up in the
 changelog. Make that one count.
 
+Everything goes through a PR, maintainers included: `main` is protected by a
+repository ruleset — no direct pushes, no force-pushes, no deletion, and CI has
+to be green before a merge. Approvals aren't required, so a solo change is
+still one merge click.
+
 ## Before you open a PR
 
 - `swift test` passes.

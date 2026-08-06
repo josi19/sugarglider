@@ -191,10 +191,13 @@ git tag v1.2.0 && git push origin v1.2.0
 
 The workflow runs the tests, builds a universal signed bundle, packages a `.zip`,
 a `.dmg` and `checksums.txt`, generates the release notes from the commit log,
-publishes the GitHub release, and commits the updated `CHANGELOG.md` back to
-`main`.
+publishes the GitHub release, and opens a `docs/changelog-vX.Y.Z` pull request
+with the updated `CHANGELOG.md` — `main` is protected, so it can't push there
+directly. That PR merges itself once CI is green, provided a `RELEASE_PAT`
+secret exists (see below); without one it waits for you to close and reopen it,
+which is what starts its checks.
 
-Nothing releases on its own: pushing to `main` only runs CI. `bump=auto`
+Nothing releases on its own: landing a commit on `main` only runs CI. `bump=auto`
 additionally refuses when nothing under `Sources/`, `Resources/` or
 `Package.swift` has changed since the last tag — a run of CI-only or docs-only
 commits would otherwise ship a byte-identical app under a new number. Pass an
@@ -226,11 +229,19 @@ just ad-hoc signed and without the Homebrew cask.
 | `APPLE_APP_PASSWORD`         | secret   | App-specific password for notarization                  |
 | `HOMEBREW_TAP_TOKEN`         | secret   | PAT with `contents:write` on the tap; updates the cask  |
 | `HOMEBREW_TAP_REPO`          | variable | Tap repo, defaults to `<owner>/homebrew-tap`            |
+| `RELEASE_PAT`                | secret   | PAT (contents + pull requests) here; self-merges the PR |
 
 Base64-encode the certificate with
 `base64 -i cert.p12 | pbcopy`. Once the Apple secrets exist the workflow signs
 and notarizes automatically, and the Gatekeeper warning disappears from the
 release notes.
+
+`RELEASE_PAT` is a fine-grained token on this repository with **Contents:
+read and write** and **Pull requests: read and write**. It exists because
+nothing pushed or opened with the built-in `GITHUB_TOKEN` starts a workflow
+run: the changelog PR's required checks would never report and it could never
+merge. It grants no extra power over `main` — that PR passes the same ruleset
+as any other.
 
 ## Disclaimer
 
